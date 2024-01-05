@@ -89,7 +89,7 @@ void setup()
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // disable brownout detector
   // start serial
   Serial.begin(115200);
-  Serial.println("CAMERA MASTER TARTED"); // tarted : 시작되다 자동사인듯?
+  Serial.println("CAMERA MASTER TARTED"); // tarted : 시작되다; 자동사인듯?
   // init camera
   initCamera();
   // init sd
@@ -382,7 +382,8 @@ void sendNextPackage()
   sendNextPackageFlag = 0; // OnDataSent() 콜백에서 1로 변경됨
 
   // if got to AFTER the last package
-  // 마지막 패키지 전송 때?
+  // 마지막 패키지 전송 이후: 현재위치 = Total Packages 수 (전송 절차 이후 count++ 하므로)
+  // e.g) TP: 256개면 변수는 0~255; index 256이면 255째(마지막) 전송 후 count++ 상태
   if (currentTransmitCurrentPosition == currentTransmitTotalPackages)
   {
     // reset
@@ -406,34 +407,39 @@ void sendNextPackage()
   int fileDataSize = fileDatainMessage;
 
   // if its the last package - we adjust the size !!!
-  // 마지막 패키지면 사이즈 조정?
+  // 마지막 패키지 때 크기 분석해서 전송 크기 조정
+  // e.g) TP: 256개면 변수는 0~255; index 255이면 254째(마지막 직전) 전송 후 count++; 마지막 패키지 전송 직전
   if (currentTransmitCurrentPosition == currentTransmitTotalPackages - 1)
   {
     Serial.println("*************************");
     Serial.println(file.size());
     Serial.println(currentTransmitTotalPackages - 1);
-    Serial.println((currentTransmitTotalPackages - 1) * fileDatainMessage);
-    fileDataSize = file.size() - ((currentTransmitTotalPackages - 1) * fileDatainMessage);
+    Serial.println((currentTransmitTotalPackages - 1) * fileDatainMessage);                // 256개; 255 * 240, [지금까지 전송 Bytes 수 표시]
+    fileDataSize = file.size() - ((currentTransmitTotalPackages - 1) * fileDatainMessage); // 전체 fileSize에서 지금까지 전송한 양 차감 -> 남은 데이터 < fileDatainMessage [자투리 데이터 계산]
   }
 
-  // Serial.println("fileDataSize=" + String(fileDataSize));
+  Serial.println("fileDataSize=" + String(fileDataSize));
 
   // define message array
   uint8_t messageArray[fileDataSize + 3];
-  messageArray[0] = 0x02;
+  messageArray[0] = 0x02; // 나머지 2개 원소는? -> 아래 [1], [2] 설정
 
+  // seek() 함수로 파일 탐색 포인트 이동: 다음 보낼 데이터 시작점 지정
   file.seek(currentTransmitCurrentPosition * fileDatainMessage);
   currentTransmitCurrentPosition++; // set to current (after seek!!!)
   // Serial.println("PACKAGE - " + String(currentTransmitCurrentPosition));
 
-  messageArray[1] = currentTransmitCurrentPosition >> 8;
-  messageArray[2] = (byte)currentTransmitCurrentPosition;
+  // slave가 알도록 현재위치 2Bytes 메시지에 저장
+  messageArray[1] = currentTransmitCurrentPosition >> 8;  // 비트연산, 8비트 right shift, 2nd 8bits 남김
+  messageArray[2] = (byte)currentTransmitCurrentPosition; // 1st 8bits; 총 하위 16비트
   for (int i = 0; i < fileDataSize; i++)
   {
     if (file.available())
     {
-      messageArray[3 + i] = file.read();
-    } // end if available
+      messageArray[3 + i] = file.read(); // [3]원소부터 파일내용 기록
+    }
+    // end if available
+
     else
     {
       Serial.println("END !!!");
@@ -441,6 +447,7 @@ void sendNextPackage()
     }
   } // end for
 
+  // 데이터 본격 전송
   sendData(messageArray, sizeof(messageArray));
   file.close();
 }
@@ -501,13 +508,13 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
   Serial.print("마지막 패킷 전송 상태: ");
   Serial.println(status == ESP_NOW_SEND_SUCCESS);
 
-  if (currentTransmitTotalPackages)
+  if (currentTransmitTotalPackages) // 보낼 패키지가 남아있으면
   {
-    sendNextPackageFlag = 1;
-    // if nto suecess 0 resent the last one
-    if (status != ESP_NOW_SEND_SUCCESS)
-      currentTransmitCurrentPosition--;
-  } // end if
+    sendNextPackageFlag = 1; // 보냄 신호 on
+    // if nto success 0 resent the last one
+    if (status != ESP_NOW_SEND_SUCCESS) // 온전히 전송되지 않았으면
+      currentTransmitCurrentPosition--; // count를 되돌려 재전송하도록 함
+  }                                     // end if
 }
 
 /* ***************************************************************** */
