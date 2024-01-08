@@ -19,7 +19,7 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #define ONBOADLED 4
-#define RXPIN 3
+// #define RXPIN 3
 #include "esp_camera.h"
 
 #include "SPIFFS.h"
@@ -37,12 +37,14 @@ const char *PARAM_INPUT_3 = "capturePeriod";
 // Variables to save values from HTML form
 String camId;
 String slaveMAC;
-String capturePeriod;
+String capturePeriod; // Interval at which to take photo
 
 // File paths to save input values permanently
 const char *camIdPath = "/camId.txt";
 const char *slaveMACPath = "/slaveMAC.txt";
 const char *capturePeriodPath = "/capturePeriod.txt";
+
+unsigned long previousMillis = 0; // Stores last time using Reference time
 
 // For Reset Cam Configuration
 byte camResetFlag = 1; // ** 다시 1로 돌아올 방법 모색해야됨 **
@@ -92,7 +94,7 @@ byte sendNextPackageFlag = 0;
 String fileName = "/moon.jpg";
 
 // for connection type
-bool useUartRX = 0;
+// bool useUartRX = 0;
 
 // 메소드 선언부
 void takePhoto();
@@ -221,14 +223,14 @@ void setup()
     {
       Serial.println(Serial.read());
     }
-    useUartRX = 1;
+    // useUartRX = 1;
   }
 
-  if (!useUartRX)
+  if (1) //! useUartRX
   {
     // set RX as pullup for safety
-    pinMode(RXPIN, INPUT_PULLUP);
-    Serial.println("We are using the button");
+    // pinMode(RXPIN, INPUT_PULLUP);
+    // Serial.println("We are using the button");
 
     // Set device in STA mode to begin with
     WiFi.mode(WIFI_STA);
@@ -246,11 +248,12 @@ void setup()
 
 void loop()
 {
+
   // if we are:
   // 1. NOT USING UART AS CONNECTION (ESP NOW WORKING)
   // 2. NOT PARIED
   // 3. OUR LAST CONNECT ATTMEPT WAS OVER DUE 마지막 연결 시도가 종료된 상태면
-  if (!useUartRX && !isPaired && lastConnectNowAttempt + nextConnectNowGap < millis())
+  if (!isPaired && lastConnectNowAttempt + nextConnectNowGap < millis()) //! useUartRX &&
   {
     // 재시도
     Serial.println("NOT CONNECTED -> TRY TO CONNECT");
@@ -276,7 +279,9 @@ void loop()
   // 3. we are currently not have currentTransmitTotalPackages set
   // 4. the sendNextPackageFlag is not set.
   // 버튼 눌렀을 때 사진 찍는 flow -> 주기 자동촬영으로 개선 예정
-  if (!useUartRX && !digitalRead(RXPIN) && !currentTransmitTotalPackages && !sendNextPackageFlag)
+
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= (long)capturePeriod.toInt() && !currentTransmitTotalPackages && !sendNextPackageFlag) //! useUartRX && !digitalRead(RXPIN) &&
     takeNextPhotoFlag = 1;
 
   // if the sendNextPackageFlag is set:
@@ -289,7 +294,7 @@ void loop()
                  // >> startTransmit() >> sendData() >> esp_now_send();
 
   // we only read serial if we use the uart: 직렬통신으로 serial에 명령 입력 가능
-  if (Serial.available() && useUartRX)
+  if (Serial.available()) //  && useUartRX
   {
     switch (Serial.read())
     {
@@ -524,7 +529,7 @@ void sendNextPackage()
     fileDataSize = file.size() - ((currentTransmitTotalPackages - 1) * fileDatainMessage); // 전체 fileSize에서 지금까지 전송한 양 차감 -> 남은 데이터 < fileDatainMessage [자투리 데이터 계산]
   }
 
-  Serial.println("fileDataSize=" + String(fileDataSize));
+  // Serial.println("fileDataSize=" + String(fileDataSize));  //613라인과 같이 주석설정/해제
 
   // define message array
   uint8_t messageArray[fileDataSize + 3];
@@ -606,13 +611,13 @@ void sendData(uint8_t *dataArray, uint8_t dataArrayLength)
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
 {
   // print info
-  char macStr[18];
-  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
-           mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
-  Serial.print("마지막 패킷 목적지: ");
-  Serial.println(macStr);
-  Serial.print("마지막 패킷 전송 상태: ");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS);
+  // char macStr[18];
+  // snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
+  //          mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+  // Serial.print("마지막 패킷 목적지: ");
+  // Serial.println(macStr);
+  // Serial.print("마지막 패킷 전송 상태: ");
+  // Serial.println(status == ESP_NOW_SEND_SUCCESS);
 
   if (currentTransmitTotalPackages) // 보낼 패키지가 남아있으면
   {
