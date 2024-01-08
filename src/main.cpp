@@ -22,6 +22,31 @@
 #define RXPIN 3
 #include "esp_camera.h"
 
+#include "SPIFFS.h"
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
+
+// Create AsyncWebServer object on port 80
+AsyncWebServer server(80);
+
+// Search for parameter in HTTP POST request
+const char *PARAM_INPUT_1 = "camId";
+const char *PARAM_INPUT_2 = "slaveMAC";
+const char *PARAM_INPUT_3 = "capturePeriod";
+
+// Variables to save values from HTML form
+String camId;
+String slaveMAC;
+String capturePeriod;
+
+// File paths to save input values permanently
+const char *camIdPath = "/camId.txt";
+const char *slaveMACPath = "/slaveMAC.txt";
+const char *capturePeriodPath = "/capturePeriod.txt";
+
+// For Reset Cam Configuration
+byte camResetFlag = 1; // ** 다시 1로 돌아올 방법 모색해야됨 **
+
 // Pin definition for CAMERA_MODEL_AI_THINKER, esp32 cam 핀 배열
 #define PWDN_GPIO_NUM 32
 #define RESET_GPIO_NUM -1
@@ -83,17 +108,98 @@ bool manageSlave();
 void deletePeer();
 void blinkIt(int delayTime, int times);
 
+void initSPIFFS();                                                 // Initialize SPIFFS
+String readFile(fs::FS &fs, const char *path);                     // Read File from SPIFFS
+void writeFile(fs::FS &fs, const char *path, const char *message); // Write file to SPIFFS
+
 void setup()
 {
   // NEEDED ????
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // disable brownout detector
   // start serial
   Serial.begin(115200);
+  Serial.println("debug point 1");
+
+  initSPIFFS(); // init SPIFFS
+
+  // Load values saved in SPIFFS
+  camId = readFile(SPIFFS, camIdPath);
+  slaveMAC = readFile(SPIFFS, slaveMACPath);
+  capturePeriod = readFile(SPIFFS, capturePeriodPath);
+  Serial.print("CamID in SPIFFS: ");
+  Serial.println(camId);
+  Serial.print("SlaveMAC in SPIFFS: ");
+  Serial.println(slaveMAC);
+  Serial.print("CapturePeriod in SPIFFS: ");
+  Serial.println(capturePeriod);
+
+  Serial.println("debug point 2");
+
+  // AP모드 진입(cam config reset): softAP() 메소드
+  if (camResetFlag)
+  {
+    camResetFlag = 0; // ** 다시 1로 돌아가는 방법 모색해야됨! **
+    // Connect to Wi-Fi network with SSID and password
+    Serial.println("Setting AP (Access Point)");
+    // NULL sets an open Access Point
+    WiFi.softAP("ESP-WIFI-MANAGER", NULL);
+
+    IPAddress IP = WiFi.softAPIP(); // Software enabled Access Point : 가상 라우터, 가상의 액세스 포인트
+    Serial.print("AP IP address: ");
+    Serial.println(IP);
+
+    // Web Server Root URL
+    // GET방식
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(SPIFFS, "/wifimanager.html", "text/html"); });
+
+    server.serveStatic("/", SPIFFS, "/");
+    // POST방식
+    server.on("/", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
+      int params = request->params();
+      for(int i=0;i<params;i++){
+        AsyncWebParameter* p = request->getParam(i);
+        if(p->isPost()){
+          // HTTP POST camId value
+          if (p->name() == PARAM_INPUT_1) {
+            camId = p->value().c_str();
+            Serial.print("Cam ID set to: ");
+            Serial.println(camId);
+            // Write file to save value
+            writeFile(SPIFFS, camIdPath, camId.c_str());
+          }
+          // HTTP POST slaveMAC value
+          if (p->name() == PARAM_INPUT_2) {
+            slaveMAC = p->value().c_str();
+            Serial.print("Dest. MAC set to: ");
+            Serial.println(slaveMAC);
+            // Write file to save value
+            writeFile(SPIFFS, slaveMACPath, slaveMAC.c_str());
+          }
+          // HTTP POST capturePeriod value
+          if (p->name() == PARAM_INPUT_3) {
+            capturePeriod = p->value().c_str();
+            Serial.print("Capture Period set to: ");
+            Serial.println(capturePeriod);
+            // Write file to save value
+            writeFile(SPIFFS, capturePeriodPath, capturePeriod.c_str());
+          }
+          
+          //Serial.printf("POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
+        }
+      }
+      // ESP가 양식 세부 정보를 수신했음을 알 수 있도록 일부 텍스트가 포함된 응답을 send
+      request->send(200, "text/plain", "Done. ESP will restart, Take photo periodcally, and then Send it to Slave Device: " + slaveMAC);
+      delay(3000);
+      ESP.restart(); });
+    server.begin();
+  }
+
   Serial.println("CAMERA MASTER TARTED"); // tarted : 시작되다; 자동사인듯?
-  // init camera
-  initCamera();
-  // init sd
-  initSD();
+
+  initCamera(); // init camera
+  initSD();     // init sd
 
   // init onboad led
   pinMode(ONBOADLED, OUTPUT);
@@ -764,5 +870,57 @@ void blinkIt(int delayTime, int times)
     delay(delayTime);
     digitalWrite(ONBOADLED, LOW);
     delay(delayTime);
+  }
+}
+
+// Initialize SPIFFS
+void initSPIFFS()
+{
+  if (!SPIFFS.begin(true))
+  {
+    Serial.println("An error has occurred while mounting SPIFFS");
+  }
+  Serial.println("SPIFFS mounted successfully");
+}
+
+// Read File from SPIFFS
+String readFile(fs::FS &fs, const char *path)
+{
+  Serial.printf("Reading file: %s\r\n", path);
+
+  File file = fs.open(path);
+  if (!file || file.isDirectory())
+  {
+    Serial.println("- failed to open file for reading");
+    return String();
+  }
+
+  String fileContent;
+  while (file.available())
+  {
+    fileContent = file.readStringUntil('\n');
+    break;
+  }
+  return fileContent;
+}
+
+// Write file to SPIFFS
+void writeFile(fs::FS &fs, const char *path, const char *message)
+{
+  Serial.printf("Writing file: %s\r\n", path);
+
+  File file = fs.open(path, FILE_WRITE);
+  if (!file)
+  {
+    Serial.println("- failed to open file for writing");
+    return;
+  }
+  if (file.print(message))
+  {
+    Serial.println("- file written");
+  }
+  else
+  {
+    Serial.println("- write failed");
   }
 }

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>ESP-NOW Manager</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" type="text/css" href="style.css" />
+  </head>
+  <body>
+    <div class="topnav">
+      <h1>ESP-NOW Manager</h1>
+    </div>
+    <div class="content">
+      <div class="card-grid">
+        <div class="card">
+          <form action="/" method="POST">
+            <p>
+              <label for="camId">Cam ID</label>
+              <input type="text" id="camId" name="camId" value="1" /><br />
+              <label for="slaveMAC">MAC(Connect to)</label>
+              <input
+                type="text"
+                id="slaveMAC"
+                name="slaveMAC"
+                value="FF:FF:FF:FF:FF:FF"
+              /><br />
+              <label for="capturePeriod">Capture period</label>
+              <input
+                type="text"
+                id="period"
+                name="capturePeriod"
+                value="3"
+              /><label>sec</label><br />
+
+              <input type="submit" value="Submit" />
+            </p>
+          </form>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
