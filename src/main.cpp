@@ -8,7 +8,6 @@
 // for more information
 // https://www.youtube.com/watch?v=0s4Bm9Ar42U
 */
-
 #include "Arduino.h"
 #include "FS.h"               // SD Card ESP32
 #include "SD_MMC.h"           // SD Card ESP32
@@ -46,8 +45,8 @@ const char *capturePeriodPath = "/capturePeriod.txt";
 
 unsigned long previousMillis = 0; // Stores last time using Reference time
 
-// For Reset Cam Configuration
-byte camResetFlag = 1; // ** 다시 1로 돌아올 방법 모색해야됨 **
+// #define CONFIG_ARDUINO_LOOP_STACK_SIZE 16 * 1024 // 16KB
+// uxTaskGetStackHighWaterMark
 
 // Pin definition for CAMERA_MODEL_AI_THINKER, esp32 cam 핀 배열
 #define PWDN_GPIO_NUM 32
@@ -113,14 +112,16 @@ void blinkIt(int delayTime, int times);
 void initSPIFFS();                                                 // Initialize SPIFFS
 String readFile(fs::FS &fs, const char *path);                     // Read File from SPIFFS
 void writeFile(fs::FS &fs, const char *path, const char *message); // Write file to SPIFFS
+bool initCamConfig();                                              // For Reset Cam Configuration
+bool allowsLoop = false;                                           // loop() DO or NOT
 
 void setup()
 {
   // NEEDED ????
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // disable brownout detector
   // start serial
+
   Serial.begin(115200);
-  Serial.println("debug point 1");
 
   initSPIFFS(); // init SPIFFS
 
@@ -135,12 +136,9 @@ void setup()
   Serial.print("CapturePeriod in SPIFFS: ");
   Serial.println(capturePeriod);
 
-  Serial.println("debug point 2");
-
   // AP모드 진입(cam config reset): softAP() 메소드
-  if (camResetFlag)
+  if (initCamConfig())
   {
-    camResetFlag = 0; // ** 다시 1로 돌아가는 방법 모색해야됨! **
     // Connect to Wi-Fi network with SSID and password
     Serial.println("Setting AP (Access Point)");
     // NULL sets an open Access Point
@@ -188,7 +186,7 @@ void setup()
             writeFile(SPIFFS, capturePeriodPath, capturePeriod.c_str());
           }
           
-          //Serial.printf("POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
+          Serial.printf("POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
         }
       }
       // ESP가 양식 세부 정보를 수신했음을 알 수 있도록 일부 텍스트가 포함된 응답을 send
@@ -197,37 +195,37 @@ void setup()
       ESP.restart(); });
     server.begin();
   }
-
-  Serial.println("CAMERA MASTER TARTED"); // tarted : 시작되다; 자동사인듯?
-
-  initCamera(); // init camera
-  initSD();     // init sd
-
-  // init onboad led
-  pinMode(ONBOADLED, OUTPUT);
-  digitalWrite(ONBOADLED, LOW);
-
-  // we now test to see if we got serial communication
-  unsigned long testForUart = millis();
-  Serial.print("WAIT UART");
-  while (testForUart + UARTWAITHANDSHACK > millis() && !Serial.available())
+  else
   {
-    Serial.print(".");
-    delay(50);
-  }
+    Serial.println("CAMERA MASTER STARTED"); // tarted : 시작되다; 자동사인듯?
+    initCamera();                            // init camera
+    initSD();                                // init sd
 
-  if (Serial.available())
-  {
-    Serial.println("We are using Serial!!");
-    while (Serial.available())
+    // init onboad led
+    pinMode(ONBOADLED, OUTPUT);
+    digitalWrite(ONBOADLED, LOW);
+
+    // we now test to see if we got serial communication
+    unsigned long testForUart = millis();
+    Serial.print("WAIT UART");
+    while (testForUart + UARTWAITHANDSHACK > millis() && !Serial.available())
     {
-      Serial.println(Serial.read());
+      Serial.print(".");
+      delay(50);
     }
-    // useUartRX = 1;
-  }
 
-  if (1) //! useUartRX
-  {
+    if (Serial.available())
+    {
+      Serial.println("We are using Serial!!");
+      while (Serial.available())
+      {
+        Serial.println(Serial.read());
+      }
+      // useUartRX = 1;
+    }
+    /*
+        if (1) //! useUartRX
+        {*/
     // set RX as pullup for safety
     // pinMode(RXPIN, INPUT_PULLUP);
     // Serial.println("We are using the button");
@@ -243,6 +241,8 @@ void setup()
     // Once ESPNow is successfully Init, we will register for Send CB to
     // get the status of Trasnmitted packet
     esp_now_register_send_cb(OnDataSent);
+    /*}*/
+    allowsLoop = true;
   }
 }
 
@@ -253,7 +253,7 @@ void loop()
   // 1. NOT USING UART AS CONNECTION (ESP NOW WORKING)
   // 2. NOT PARIED
   // 3. OUR LAST CONNECT ATTMEPT WAS OVER DUE 마지막 연결 시도가 종료된 상태면
-  if (!isPaired && lastConnectNowAttempt + nextConnectNowGap < millis()) //! useUartRX &&
+  if (!isPaired && lastConnectNowAttempt + nextConnectNowGap < millis() && allowsLoop) //! useUartRX &&
   {
     // 재시도
     Serial.println("NOT CONNECTED -> TRY TO CONNECT");
@@ -261,12 +261,12 @@ void loop()
     // if we connected
     if (isPaired)
     {
-      blinkIt(150, 2);
+      // blinkIt(150, 2);
     }
     else
     {
       nextConnectNowGap *= 2; // 다음 연결 시도 간격을 두배로 1, 2, 4...
-      blinkIt(150, 3);        // blink 3 times
+      // blinkIt(150, 3);        // blink 3 times
     }
 
     // save last attempt
@@ -281,40 +281,45 @@ void loop()
   // 버튼 눌렀을 때 사진 찍는 flow -> 주기 자동촬영으로 개선 예정
 
   unsigned long currentMillis = millis();
-  if (currentMillis - previousMillis >= (long)capturePeriod.toInt() && !currentTransmitTotalPackages && !sendNextPackageFlag) //! useUartRX && !digitalRead(RXPIN) &&
+  if (currentMillis - previousMillis >= (long)capturePeriod.toInt() && !currentTransmitTotalPackages && !sendNextPackageFlag && allowsLoop) //! useUartRX && !digitalRead(RXPIN) &&
+  {
+    previousMillis = currentMillis;
     takeNextPhotoFlag = 1;
-
+    Serial.print("Input Slave MAC LENGTH:");
+    Serial.println(slaveMAC.length());
+  }
   // if the sendNextPackageFlag is set:
   if (sendNextPackageFlag)
     sendNextPackage(); // 다음 패키지를 보냄:
 
   // if takeNextPhotoFlag is set: 사진 촬영 변수
-  if (takeNextPhotoFlag)
+  if (takeNextPhotoFlag && allowsLoop)
     takePhoto(); // >> startTransmit()로 이어짐 (currentTransmitTotalPackages 변수 설정)
                  // >> startTransmit() >> sendData() >> esp_now_send();
-
-  // we only read serial if we use the uart: 직렬통신으로 serial에 명령 입력 가능
-  if (Serial.available()) //  && useUartRX
-  {
-    switch (Serial.read())
+  /*
+    // we only read serial if we use the uart: 직렬통신으로 serial에 명령 입력 가능
+    if (Serial.available()) //  && useUartRX
     {
-    case 'p':
-    case 'P':
-      takeNextPhotoFlag = 1;
-      break;
-    case 's':
-    case 'S':
-      ScanAndConnectToSlave();
-      break;
-    case 't':
-    case 'T':
-      startTransmit();
-      break;
-    default:
-      Serial.println("not supported!!!");
-      break;
-    } // end switch
-  }   // end if
+      switch (Serial.read())
+      {
+      case 'p':
+      case 'P':
+        takeNextPhotoFlag = 1;
+        break;
+      case 's':
+      case 'S':
+        ScanAndConnectToSlave();
+        break;
+      case 't':
+      case 'T':
+        startTransmit();
+        break;
+      default:
+        Serial.println("not supported!!!");
+        break;
+      } // end switch
+    }   // end if
+    */
 }
 
 /* ***************************************************************** */
@@ -328,18 +333,26 @@ void loop()
 void takePhoto()
 {
   takeNextPhotoFlag = 0;
-  digitalWrite(4, HIGH);
-  delay(50);
+
+  // digitalWrite(4, HIGH);
+  // delay(50);
   camera_fb_t *fb = NULL; // 카메라 버퍼 구조체
+
+  Serial.print("takeNextPhotoFlag1: "); // debugging
+  Serial.println(takeNextPhotoFlag);
 
   // Take Picture with Camera
   fb = esp_camera_fb_get(); // 포인터에서 프레임 버퍼를 얻음
-  if (!fb)                  // 버퍼가 비어있으면 카매라 캡쳐 실패
+
+  Serial.print("takeNextPhotoFlag2: "); // debugging
+  Serial.println(takeNextPhotoFlag);
+
+  if (!fb) // 버퍼가 비어있으면 카매라 캡쳐 실패
   {
     Serial.println("Camera capture failed");
     return;
   }
-  digitalWrite(4, LOW);
+  // digitalWrite(4, LOW);
 
   // 찬솔-기능추가: 파일명 zero padding
   std::string old_str = std::to_string(pictureNumber);
@@ -351,7 +364,7 @@ void takePhoto()
   fs::FS &fs = SD_MMC;
   Serial.printf("Picture file name: %s\n", path.c_str());
 
-  fs.remove(path.c_str());
+  fs.remove(path.c_str()); // 이미 있으면 지우고
 
   File file = fs.open(path.c_str(), FILE_WRITE);
   if (!file)
@@ -462,6 +475,7 @@ void startTransmit()
     Serial.println("Failed to open file in writing mode");
     return;
   }
+  Serial.print("File Size: ");
   Serial.println(file.size());
   int fileSize = file.size(); // 크기를 구하고
   file.close();
@@ -470,6 +484,7 @@ void startTransmit()
   currentTransmitCurrentPosition = 0;
   // 총 전송 단위 수
   currentTransmitTotalPackages = ceil(fileSize / fileDatainMessage); // data cut-down; ceil(): 소숫점 올림함수
+  Serial.print("Total Packages: ");
   Serial.println(currentTransmitTotalPackages);
   // package 총량이 255를 넘어갈 수 있으므로 2 segment로 분리해야함.
   // int(32bit) 슬라이스 -> {01, uint8_t(상위 24비트), 하위 8비트(축소변환)}
@@ -501,7 +516,8 @@ void sendNextPackage()
     currentTransmitCurrentPosition = 0;
     currentTransmitTotalPackages = 0;
     Serial.println("Done submitting files"); // 파일 전송이 완료됨 표시
-    // takeNextPhotoFlag = 1;
+
+    // takeNextPhotoFlag = 1; // 타이머로 주기적 촬영 구현해서 필요없어짐
     return;
   } // end if
 
@@ -523,10 +539,15 @@ void sendNextPackage()
   if (currentTransmitCurrentPosition == currentTransmitTotalPackages - 1)
   {
     Serial.println("*************************");
+    Serial.print("File Size: ");
     Serial.println(file.size());
+    Serial.print("current Transmit packages: ");
     Serial.println(currentTransmitTotalPackages - 1);
+    Serial.print("Transmitted Data:");
     Serial.println((currentTransmitTotalPackages - 1) * fileDatainMessage);                // 256개; 255 * 240, [지금까지 전송 Bytes 수 표시]
     fileDataSize = file.size() - ((currentTransmitTotalPackages - 1) * fileDatainMessage); // 전체 fileSize에서 지금까지 전송한 양 차감 -> 남은 데이터 < fileDatainMessage [자투리 데이터 계산]
+    Serial.print("Last package Data: ");
+    Serial.println(fileDataSize);
   }
 
   // Serial.println("fileDataSize=" + String(fileDataSize));  //613라인과 같이 주석설정/해제
@@ -537,7 +558,7 @@ void sendNextPackage()
 
   // seek() 함수로 파일 탐색 포인트 이동: 다음 보낼 데이터 시작점 지정
   file.seek(currentTransmitCurrentPosition * fileDatainMessage);
-  currentTransmitCurrentPosition++; // set to current (after seek!!!)
+  ++currentTransmitCurrentPosition; // set to current (after seek!!!)
   // Serial.println("PACKAGE - " + String(currentTransmitCurrentPosition));
 
   // slave가 알도록 현재위치 2Bytes 메시지에 저장
@@ -724,7 +745,33 @@ void ScanAndConnectToSlave()
         // Hence, break after we find one, to be a bit efficient
         break;
       }
-    }
+
+      else if (slaveMAC.length() == 17) // 찬솔 추가: index 대신 MAC주소 입력값으로 연결
+      {
+        // SSID of interest
+        Serial.print("Input Slave MAC Addr: ");
+        Serial.println(slaveMAC);
+
+        int mac[6];
+        // scanf()와 동일, 입력 대상이 표준 입력이 아닌 매개변수로 전달되는 [문자열 버퍼] / 1st param: 입력한 문자열: c_str(): string->const char* 변환
+        if (6 == sscanf(slaveMAC.c_str(), "%x:%x:%x:%x:%x:%x%c", &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]))
+        {
+          for (int ii = 0; ii < 6; ++ii)
+          {
+            slave.peer_addr[ii] = (uint8_t)mac[ii];
+          }
+          slave.channel = CHANNEL; // pick a channel
+          slave.encrypt = 0;       // no encryption
+
+          slaveFound = 1;
+          // we are planning to have only one slave in this example;
+          // Hence, break after we find one, to be a bit efficient
+          break;
+        }
+        Serial.println("Invalid MAC Addr.");
+      } // else if end
+
+    } // for end
   }
 
   if (slaveFound)
@@ -928,4 +975,14 @@ void writeFile(fs::FS &fs, const char *path, const char *message)
   {
     Serial.println("- write failed");
   }
+}
+
+bool initCamConfig()
+{
+  if (camId == "" || slaveMAC == "" || capturePeriod == "")
+  {
+    Serial.println("Undefined Cam ID or slaveMac or Capture Period.");
+    return true;
+  }
+  return false;
 }

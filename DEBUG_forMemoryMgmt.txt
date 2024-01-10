@@ -1,0 +1,195 @@
+*************************
+File Size: 12924
+current Transmit packages: 53
+Transmitted Data:12720.00
+Last package Data: 204
+Done submitting files
+takeNextPhotoFlag0: 0
+takeNextPhotoFlag1: 0
+takeNextPhotoFlag2: 0
+takeNextPhotoFlag3: 0
+takeNextPhotoFlag4: 0
+takeNextPhotoFlag5: 0
+Picture file name: /picture0000575.jpg
+takeNextPhotoFlag6: 0
+takeNextPhotoFlag7: 0
+takeNextPhotoFlag8: 0
+Saved file to path: /picture0000575.jpg
+takeNextPhotoFlag9: 0
+takeNextPhotoFlag10: 0
+Starting transmit
+File Size: 13000
+Total Packages: 55
+*************************
+File Size: 13000
+current Transmit packages: 54
+Transmitted Data:12960.00
+Last package Data: 40
+Done submitting files
+takeNextPhotoFlag0: 0
+takeNextPhotoFlag1: 0
+takeNextPhotoFlag2: 0
+takeNextPhotoFlag3: 0
+takeNextPhotoFlag4: 0
+takeNextPhotoFlag5: 0
+Picture file name: /picture0000576.jpg
+takeNextPhotoFlag6: 0
+takeNextPhotoFlag7: 0
+takeNextPhotoFlag8: 0
+Saved file to path: /picture0000576.jpg
+takeNextPhotoFlag9: 0
+takeNextPhotoFlag10: 0
+Starting transmit
+File Size: 12758
+Total Packages: 54
+*************************
+File Size: 12758
+current Transmit packages: 53
+Transmitted Data:12720.00
+Last package Data: 38
+Done submitting files
+takeNextPhotoFlag0: 0
+takeNextPhotoFlag1: 0
+takeNextPhotoFlag2: 0
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception). 
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x40092d2f  PS      : 0x00060036  A0      : 0x800915ec  A1      : 0x3ffcb390
+A2      : 0x3ffbf758  A3      : 0xb33fffff  A4      : 0x0000cdcd  A5      : 0x00060023
+A6      : 0x00060023  A7      : 0x0000abab  A8      : 0xb33fffff  A9      : 0xffffffff
+A10     : 0x3f800914  A11     : 0x00000000  A12     : 0x80085d7e  A13     : 0x3ffbf6ac
+A14     : 0x007bf758  A15     : 0x003fffff  SAR     : 0x0000000a  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x4008b790  LEND    : 0x4008b7a6  LCOUNT  : 0xffffffff
+
+
+Backtrace: 0x40092d2c:0x3ffcb390 0x400915e9:0x3ffcb3d0 0x4008faa8:0x3ffcb400 0x4008fa58:0x3ff000e0 |<-CORRUPTED
+
+
+
+
+ELF file SHA256: 9e3e61febf26b43a
+
+Rebooting...
+ets Jul 29 2019 12:21:46
+
+rst:0xc (SW_CPU_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+SPIFFS mounted successfully
+Reading file: /camId.txt
+Reading file: /slaveMAC.txt
+Reading file: /capturePeriod.txt
+CamID in SPIFFS: 1
+SlaveMAC in SPIFFS: FF:FF:FF:FF:FF:FF
+CapturePeriod in SPIFFS: 5000
+CAMERA MASTER STARTED
+psramFound() = 1
+Starting SD Card
+WAIT UART....................STA MAC: 08:3A:F2:67:2B:C4
+ESPNow Init Success
+NOT CONNECTED -> TRY TO CONNECT
+
+Found 18 devices
+1: Slave_1 (-21)
+Found a Slave.
+1: Slave_1 [94:B5:55:26:A2:69] (-21)
+Slave Found, processing...
+Slave Delete Status: Peer not found.
+Slave Status: Pair success
+Slave pair success!
+takeNextPhotoFlag1: 0
+takeNextPhotoFlag2: 0
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception). 
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x40092d2f  PS      : 0x00060036  A0      : 0x800915ec  A1      : 0x3ffcb390
+A2      : 0x3ffbf758  A3      : 0xb33fffff  A4      : 0x0000cdcd  A5      : 0x00060023
+A6      : 0x00060023  A7      : 0x0000abab  A8      : 0xb33fffff  A9      : 0xffffffff
+A10     : 0x00000001  A11     : 0x3ffcb3a0  A12     : 0x80085d7e  A13     : 0x3ffbf6ac
+A14     : 0x007bf758  A15     : 0x003fffff  SAR     : 0x0000000a  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x4008b790  LEND    : 0x4008b7a6  LCOUNT  : 0xffffffff
+
+
+Backtrace: 0x40092d2c:0x3ffcb390 0x400915e9:0x3ffcb3d0 0x4008faa8:0x3ffcb400 0x4008fa58:0x3ff000e0 |<-CORRUPTED
+
+
+
+
+ELF file SHA256: 9e3e61febf26b43a
+
+Rebooting...
+ets Jul 29 2019 12:21:46
+
+rst:0xc (SW_CPU_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+SPIFFS mounted successfully
+Reading file: /camId.txt
+Reading file: /slaveMAC.txt
+Reading file: /capturePeriod.txt
+CamID in SPIFFS: 1
+SlaveMAC in SPIFFS: FF:FF:FF:FF:FF:FF
+CapturePeriod in SPIFFS: 5000
+CAMERA MASTER STARTED
+psramFound() = 1
+Starting SD Card
+WAIT UART....................STA MAC: 08:3A:F2:67:2B:C4
+ESPNow Init Success
+NOT CONNECTED -> TRY TO CONNECT
+
+Found 17 devices
+1: Slave_1 (-21)
+Found a Slave.
+1: Slave_1 [94:B5:55:26:A2:69] (-21)
+Slave Found, processing...
+Slave Delete Status: Peer not found.
+Slave Status: Pair success
+Slave pair success!
+takeNextPhotoFlag1: 0
+takeNextPhotoFlag2: 0
+takeNextPhotoFlag3: 0
+takeNextPhotoFlag4: 0
+takeNextPhotoFlag5: 0
+Picture file name: /picture0000001.jpg
+takeNextPhotoFlag6: 0
+takeNextPhotoFlag7: 0
+takeNextPhotoFlag8: 0
+Saved file to path: /picture0000001.jpg
+takeNextPhotoFlag9: 0
+takeNextPhotoFlag10: 0
+Starting transmit
+File Size: 12870
+Total Packages: 54
+*************************
+File Size: 12870
+current Transmit packages: 53
+Transmitted Data:12720.00
+Last package Data: 150
+Done submitting files
+takeNextPhotoFlag0: 0
+takeNextPhotoFlag1: 0
+takeNextPhotoFlag2: 0
+takeNextPhotoFlag3: 0
+takeNextPhotoFlag4: 0
+takeNextPhotoFlag5: 0
+Picture file name: /picture0000002.jpg
+takeNextPhotoFlag6: 0
+takeNextPhotoFlag7: 0
+takeNextPhotoFlag8: 0
+Saved file to path: /picture0000002.jpg
+takeNextPhotoFlag9: 0
+takeNextPhotoFlag10: 0
+Starting transmit
+File Size: 12880
+Total Packages: 54
+*************************
