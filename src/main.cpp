@@ -115,6 +115,8 @@ void writeFile(fs::FS &fs, const char *path, const char *message); // Write file
 bool initCamConfig();                                              // For Reset Cam Configuration
 bool allowsLoop = false;                                           // loop() DO or NOT
 
+float getCurrFreeHeapRatio();
+
 void setup()
 {
   // NEEDED ????
@@ -147,6 +149,15 @@ void setup()
     IPAddress IP = WiFi.softAPIP(); // Software enabled Access Point : 가상 라우터, 가상의 액세스 포인트
     Serial.print("AP IP address: ");
     Serial.println(IP);
+
+    // Print Chip Info.
+    Serial.printf("CPU Frequency: %d MHz\n", ESP.getCpuFreqMHz());
+    Serial.println();
+    Serial.printf("Flash Chip Size = %d byte\n", ESP.getFlashChipSize());
+    Serial.printf("Flash Frequency = %d Hz\n", ESP.getFlashChipSpeed());
+    Serial.println();
+    Serial.printf("Total Heap Size = %d\n", ESP.getHeapSize());
+    Serial.println();
 
     // Web Server Root URL
     // GET방식
@@ -290,12 +301,18 @@ void loop()
   }
   // if the sendNextPackageFlag is set:
   if (sendNextPackageFlag)
+  {
     sendNextPackage(); // 다음 패키지를 보냄:
+  }
 
   // if takeNextPhotoFlag is set: 사진 촬영 변수
   if (takeNextPhotoFlag && allowsLoop)
-    takePhoto(); // >> startTransmit()로 이어짐 (currentTransmitTotalPackages 변수 설정)
-                 // >> startTransmit() >> sendData() >> esp_now_send();
+  {
+    takePhoto();                                                            // >> startTransmit()로 이어짐 (currentTransmitTotalPackages 변수 설정)
+                                                                            // >> startTransmit() >> sendData() >> esp_now_send();
+    Serial.printf("Curr freeHeap Size3: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
+  }
+
   /*
     // we only read serial if we use the uart: 직렬통신으로 serial에 명령 입력 가능
     if (Serial.available()) //  && useUartRX
@@ -338,14 +355,12 @@ void takePhoto()
   // delay(50);
   camera_fb_t *fb = NULL; // 카메라 버퍼 구조체
 
-  Serial.print("takeNextPhotoFlag1: "); // debugging
-  Serial.println(takeNextPhotoFlag);
+  Serial.printf("Curr freeHeap Size1: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
 
   // Take Picture with Camera
   fb = esp_camera_fb_get(); // 포인터에서 프레임 버퍼를 얻음
 
-  Serial.print("takeNextPhotoFlag2: "); // debugging
-  Serial.println(takeNextPhotoFlag);
+  Serial.printf("Curr freeHeap Size2: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
 
   if (!fb) // 버퍼가 비어있으면 카매라 캡쳐 실패
   {
@@ -517,6 +532,8 @@ void sendNextPackage()
     currentTransmitTotalPackages = 0;
     Serial.println("Done submitting files"); // 파일 전송이 완료됨 표시
 
+    Serial.printf("Curr freeHeap Size4: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
+
     // takeNextPhotoFlag = 1; // 타이머로 주기적 촬영 구현해서 필요없어짐
     return;
   } // end if
@@ -594,6 +611,7 @@ void sendData(uint8_t *dataArray, uint8_t dataArrayLength)
   // Serial.print("length: "); Serial.println(dataArrayLength);
 
   esp_err_t result = esp_now_send(peer_addr, dataArray, dataArrayLength);
+
   // Serial.print("Send Status: ");
   if (result == ESP_OK)
   {
@@ -745,12 +763,12 @@ void ScanAndConnectToSlave()
         // Hence, break after we find one, to be a bit efficient
         break;
       }
-
+      /*
       else if (slaveMAC.length() == 17) // 찬솔 추가: index 대신 MAC주소 입력값으로 연결
       {
         // SSID of interest
-        Serial.print("Input Slave MAC Addr: ");
-        Serial.println(slaveMAC);
+        // Serial.print("Input Slave MAC Addr: ");
+        // Serial.println(slaveMAC);
 
         int mac[6];
         // scanf()와 동일, 입력 대상이 표준 입력이 아닌 매개변수로 전달되는 [문자열 버퍼] / 1st param: 입력한 문자열: c_str(): string->const char* 변환
@@ -770,6 +788,7 @@ void ScanAndConnectToSlave()
         }
         Serial.println("Invalid MAC Addr.");
       } // else if end
+      */
 
     } // for end
   }
@@ -985,4 +1004,9 @@ bool initCamConfig()
     return true;
   }
   return false;
+}
+
+float getCurrFreeHeapRatio()
+{
+  return (float)ESP.getFreeHeap() / (float)ESP.getHeapSize();
 }
