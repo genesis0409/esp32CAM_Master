@@ -43,10 +43,14 @@ const char *camIdPath = "/camId.txt";
 const char *slaveMACPath = "/slaveMAC.txt";
 const char *capturePeriodPath = "/capturePeriod.txt";
 
+unsigned long currentMillis = 0;
 unsigned long previousMillis = 0; // Stores last time using Reference time
+unsigned long tempMillis = 0;
 
 // #define CONFIG_ARDUINO_LOOP_STACK_SIZE 16 * 1024 // 16KB
 // uxTaskGetStackHighWaterMark
+// #define INCLUDE_uxTaskGetStackHighWaterMark 1
+// UBaseType_t uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
 
 // Pin definition for CAMERA_MODEL_AI_THINKER, esp32 cam 핀 배열
 #define PWDN_GPIO_NUM 32
@@ -76,6 +80,12 @@ esp_now_peer_info_t slave;
 #define PRINTSCANRESULTS 1
 #define DELETEBEFOREPAIR 1
 
+// 시리얼 모니터에 많은 내용을 출력하는 경우 메모리 공간을 많이 차지할 수 있습니다. 문자열은 플래시 메모리에 포함된 뒤 출력을 하기 위해 RAM의 일정 부분을 차지하게 됩니다.
+// 아두이노가 플래시 메모리 영역에 있는 문자열을 바로 사용할 수 있다면 RAM를 소모하지 않아 메모리를 절약할 수 있습니다. 이때 사용하는 지시어가 F()입니다.
+// using F() Macro
+#define Fprint(x) print(F(x))
+#define Fprintln(x) println(F(x))
+
 // for esp now connect
 unsigned long lastConnectNowAttempt = 0;
 unsigned long nextConnectNowGap = 1000;
@@ -84,7 +94,7 @@ bool isPaired = 0;
 // for photo name
 int pictureNumber = 1;
 const uint32_t n_zero = 7; // zero padding
-byte takeNextPhotoFlag = 0;
+bool takeNextPhotoFlag = false;
 
 // for photo transmit
 int currentTransmitCurrentPosition = 0;
@@ -101,13 +111,13 @@ void initSD();
 void initCamera();
 void startTransmit();
 void sendNextPackage();
-void sendData(uint8_t *dataArray, uint8_t dataArrayLength);
+void sendData(const uint8_t *dataArray, uint8_t dataArrayLength);
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
 void InitESPNow();
 void ScanAndConnectToSlave();
 bool manageSlave();
 void deletePeer();
-void blinkIt(int delayTime, int times);
+// void blinkIt(int delayTime, int times);
 
 void initSPIFFS();                                                 // Initialize SPIFFS
 String readFile(fs::FS &fs, const char *path);                     // Read File from SPIFFS
@@ -115,49 +125,60 @@ void writeFile(fs::FS &fs, const char *path, const char *message); // Write file
 bool initCamConfig();                                              // For Reset Cam Configuration
 bool allowsLoop = false;                                           // loop() DO or NOT
 
-float getCurrFreeHeapRatio();
+float getCurrFreeHeapRatio(); // 가용 힙 비율
+
+// espnow 지연시간 검증 변수
+int packageArrayNum = 0;
 
 void setup()
 {
+
   // NEEDED ????
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // disable brownout detector
   // start serial
 
   Serial.begin(115200);
 
-  initSPIFFS(); // init SPIFFS
+  Serial.printf("총 힙: %d\n", ESP.getHeapSize());
+  Serial.printf("사용 가능한 힙: %d\n", ESP.getFreeHeap());
+  Serial.printf("가용 힙 비율 : %.1f\n", getCurrFreeHeapRatio());
+  Serial.printf("총 PSRAM: %d\n", ESP.getPsramSize());
+  Serial.printf("여유 PSRAM: %d\n", ESP.getFreePsram());
+
+  Serial.printf("Curr freeHeap Size1: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
+  initSPIFFS();                                                           // init SPIFFS
+
+  Serial.printf("Curr freeHeap Size2: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
 
   // Load values saved in SPIFFS
   camId = readFile(SPIFFS, camIdPath);
   slaveMAC = readFile(SPIFFS, slaveMACPath);
   capturePeriod = readFile(SPIFFS, capturePeriodPath);
-  Serial.print("CamID in SPIFFS: ");
+  Serial.Fprint("CamID in SPIFFS: ");
   Serial.println(camId);
-  Serial.print("SlaveMAC in SPIFFS: ");
+  Serial.Fprint("SlaveMAC in SPIFFS: ");
   Serial.println(slaveMAC);
-  Serial.print("CapturePeriod in SPIFFS: ");
+  Serial.Fprint("CapturePeriod in SPIFFS: ");
   Serial.println(capturePeriod);
+
+  Serial.printf("Curr freeHeap Size3: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
 
   // AP모드 진입(cam config reset): softAP() 메소드
   if (initCamConfig())
   {
     // Connect to Wi-Fi network with SSID and password
-    Serial.println("Setting AP (Access Point)");
+    Serial.Fprintln("Setting AP (Access Point)");
     // NULL sets an open Access Point
     WiFi.softAP("ESP-WIFI-MANAGER", NULL);
 
     IPAddress IP = WiFi.softAPIP(); // Software enabled Access Point : 가상 라우터, 가상의 액세스 포인트
-    Serial.print("AP IP address: ");
+    Serial.Fprint("AP IP address: ");
     Serial.println(IP);
 
     // Print Chip Info.
-    Serial.printf("CPU Frequency: %d MHz\n", ESP.getCpuFreqMHz());
-    Serial.println();
-    Serial.printf("Flash Chip Size = %d byte\n", ESP.getFlashChipSize());
-    Serial.printf("Flash Frequency = %d Hz\n", ESP.getFlashChipSpeed());
-    Serial.println();
-    Serial.printf("Total Heap Size = %d\n", ESP.getHeapSize());
-    Serial.println();
+    Serial.printf("Total Heap Size = %d\n\n", ESP.getHeapSize());
+
+    Serial.printf("Curr freeHeap Size4: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
 
     // Web Server Root URL
     // GET방식
@@ -175,7 +196,7 @@ void setup()
           // HTTP POST camId value
           if (p->name() == PARAM_INPUT_1) {
             camId = p->value().c_str();
-            Serial.print("Cam ID set to: ");
+            Serial.Fprint("Cam ID set to: ");
             Serial.println(camId);
             // Write file to save value
             writeFile(SPIFFS, camIdPath, camId.c_str());
@@ -183,7 +204,7 @@ void setup()
           // HTTP POST slaveMAC value
           if (p->name() == PARAM_INPUT_2) {
             slaveMAC = p->value().c_str();
-            Serial.print("Dest. MAC set to: ");
+            Serial.Fprint("Dest. MAC set to: ");
             Serial.println(slaveMAC);
             // Write file to save value
             writeFile(SPIFFS, slaveMACPath, slaveMAC.c_str());
@@ -191,7 +212,7 @@ void setup()
           // HTTP POST capturePeriod value
           if (p->name() == PARAM_INPUT_3) {
             capturePeriod = p->value().c_str();
-            Serial.print("Capture Period set to: ");
+            Serial.Fprint("Capture Period set to: ");
             Serial.println(capturePeriod);
             // Write file to save value
             writeFile(SPIFFS, capturePeriodPath, capturePeriod.c_str());
@@ -202,15 +223,22 @@ void setup()
       }
       // ESP가 양식 세부 정보를 수신했음을 알 수 있도록 일부 텍스트가 포함된 응답을 send
       request->send(200, "text/plain", "Done. ESP will restart, Take photo periodcally, and then Send it to Slave Device: " + slaveMAC);
+      Serial.printf("Curr freeHeap Size5: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
       delay(3000);
       ESP.restart(); });
     server.begin();
+    Serial.printf("Curr freeHeap Size6: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
   }
   else
   {
-    Serial.println("CAMERA MASTER STARTED"); // tarted : 시작되다; 자동사인듯?
-    initCamera();                            // init camera
-    initSD();                                // init sd
+    Serial.Fprintln("CAMERA MASTER STARTED"); // tarted : 시작되다; 자동사인듯?
+    initCamera();                             // init camera
+    initSD();                                 // init sd
+
+    Serial.printf("Curr freeHeap Size7: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
+
+    /*
+    // Not use
 
     // init onboad led
     pinMode(ONBOADLED, OUTPUT);
@@ -218,42 +246,47 @@ void setup()
 
     // we now test to see if we got serial communication
     unsigned long testForUart = millis();
-    Serial.print("WAIT UART");
+    Serial.Fprint("WAIT UART");
     while (testForUart + UARTWAITHANDSHACK > millis() && !Serial.available())
     {
-      Serial.print(".");
+      Serial.Fprint(".");
       delay(50);
     }
 
     if (Serial.available())
     {
-      Serial.println("We are using Serial!!");
+      Serial.Fprintln("We are using Serial!!");
       while (Serial.available())
       {
-        Serial.println(Serial.read());
+        Serial.Fprintln(Serial.read());
       }
       // useUartRX = 1;
     }
+    */
     /*
         if (1) //! useUartRX
         {*/
     // set RX as pullup for safety
     // pinMode(RXPIN, INPUT_PULLUP);
-    // Serial.println("We are using the button");
+    // Serial.Fprintln("We are using the button");
 
     // Set device in STA mode to begin with
     WiFi.mode(WIFI_STA);
     // This is the mac address of the Master in Station Mode
-    Serial.print("STA MAC: ");
+    Serial.Fprint("STA MAC: ");
     Serial.println(WiFi.macAddress());
+
+    Serial.printf("Curr freeHeap Size8: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
 
     // Init ESPNow with a fallback logic
     InitESPNow();
+    Serial.printf("Curr freeHeap Size9: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
     // Once ESPNow is successfully Init, we will register for Send CB to
     // get the status of Trasnmitted packet
     esp_now_register_send_cb(OnDataSent);
     /*}*/
     allowsLoop = true;
+    Serial.printf("Curr freeHeap Size10: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
   }
 }
 
@@ -267,7 +300,7 @@ void loop()
   if (!isPaired && lastConnectNowAttempt + nextConnectNowGap < millis() && allowsLoop) //! useUartRX &&
   {
     // 재시도
-    Serial.println("NOT CONNECTED -> TRY TO CONNECT");
+    Serial.Fprintln("NOT CONNECTED -> TRY TO CONNECT");
     ScanAndConnectToSlave();
     // if we connected
     if (isPaired)
@@ -291,13 +324,12 @@ void loop()
   // 4. the sendNextPackageFlag is not set.
   // 버튼 눌렀을 때 사진 찍는 flow -> 주기 자동촬영으로 개선 예정
 
-  unsigned long currentMillis = millis();
+  currentMillis = millis();
   if (currentMillis - previousMillis >= (long)capturePeriod.toInt() && !currentTransmitTotalPackages && !sendNextPackageFlag && allowsLoop) //! useUartRX && !digitalRead(RXPIN) &&
   {
+    // Serial.printf("Interval Check1: %lu\n", currentMillis - previousMillis);
     previousMillis = currentMillis;
-    takeNextPhotoFlag = 1;
-    Serial.print("Input Slave MAC LENGTH:");
-    Serial.println(slaveMAC.length());
+    takeNextPhotoFlag = true;
   }
   // if the sendNextPackageFlag is set:
   if (sendNextPackageFlag)
@@ -308,9 +340,11 @@ void loop()
   // if takeNextPhotoFlag is set: 사진 촬영 변수
   if (takeNextPhotoFlag && allowsLoop)
   {
-    takePhoto();                                                            // >> startTransmit()로 이어짐 (currentTransmitTotalPackages 변수 설정)
-                                                                            // >> startTransmit() >> sendData() >> esp_now_send();
-    Serial.printf("Curr freeHeap Size3: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
+    takePhoto(); // >> startTransmit()로 이어짐 (currentTransmitTotalPackages 변수 설정)
+                 // >> startTransmit() >> sendData() >> esp_now_send();
+
+    // currentMillis = millis();
+    // Serial.printf("Interval Check2: %lu\n", currentMillis - previousMillis);
   }
 
   /*
@@ -321,7 +355,7 @@ void loop()
       {
       case 'p':
       case 'P':
-        takeNextPhotoFlag = 1;
+        takeNextPhotoFlag = true;
         break;
       case 's':
       case 'S':
@@ -332,7 +366,7 @@ void loop()
         startTransmit();
         break;
       default:
-        Serial.println("not supported!!!");
+        Serial.Fprintln("not supported!!!");
         break;
       } // end switch
     }   // end if
@@ -349,22 +383,20 @@ void loop()
 // 사진 촬영 후 파일로 저장, 그리고 전송
 void takePhoto()
 {
-  takeNextPhotoFlag = 0;
+  takeNextPhotoFlag = false;
 
   // digitalWrite(4, HIGH);
   // delay(50);
   camera_fb_t *fb = NULL; // 카메라 버퍼 구조체
 
-  Serial.printf("Curr freeHeap Size1: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
-
   // Take Picture with Camera
   fb = esp_camera_fb_get(); // 포인터에서 프레임 버퍼를 얻음
 
-  Serial.printf("Curr freeHeap Size2: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
+  // Serial.printf("Curr freeHeap Size Runtime: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
 
   if (!fb) // 버퍼가 비어있으면 카매라 캡쳐 실패
   {
-    Serial.println("Camera capture failed");
+    Serial.Fprintln("Camera capture failed");
     return;
   }
   // digitalWrite(4, LOW);
@@ -384,7 +416,7 @@ void takePhoto()
   File file = fs.open(path.c_str(), FILE_WRITE);
   if (!file)
   {
-    Serial.println("Failed to open file in writing mode");
+    Serial.Fprintln("Failed to open file in writing mode");
   }
   else
   {
@@ -399,7 +431,7 @@ void takePhoto()
   if (isPaired) // -> manageslave()로 이어짐; slave와 페어링된 상태면 전송
     startTransmit();
 
-  pictureNumber++;
+  ++pictureNumber;
 }
 
 /* ***************************************************************** */
@@ -407,17 +439,17 @@ void takePhoto()
 /* ***************************************************************** */
 void initSD()
 {
-  Serial.println("Starting SD Card");
+  Serial.Fprintln("Starting SD Card");
   if (!SD_MMC.begin("/sdcard", true))
   {
-    Serial.println("SD Card Mount Failed");
+    Serial.Fprintln("SD Card Mount Failed");
     return;
   }
 
   uint8_t cardType = SD_MMC.cardType();
   if (cardType == CARD_NONE)
   {
-    Serial.println("No SD Card attached");
+    Serial.Fprintln("No SD Card attached");
     return;
   }
 }
@@ -449,18 +481,20 @@ void initCamera()
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
 
-  Serial.println("psramFound() = " + String(psramFound()));
+  // no psram
+  Serial.Fprint("psramFound() = ");
+  Serial.println(String(psramFound()));
 
   if (psramFound())
   {
-    config.frame_size = FRAMESIZE_QVGA; // FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA //FRAMESIZE_QVGA
-    config.jpeg_quality = 2;
-    config.fb_count = 2;
+    config.frame_size = FRAMESIZE_SVGA; // FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA //FRAMESIZE_QVGA
+    config.jpeg_quality = 10;
+    config.fb_count = 1;
   }
   else
   {
     config.frame_size = FRAMESIZE_SVGA;
-    config.jpeg_quality = 12;
+    config.jpeg_quality = 16;
     config.fb_count = 1;
   }
 
@@ -482,15 +516,21 @@ void initCamera()
 /* ***************************************************************** */
 void startTransmit()
 {
-  Serial.println("Starting transmit");
+  tempMillis = millis(); // debugging set3
+
+  Serial.Fprintln("Starting transmit");
   fs::FS &fs = SD_MMC;
   File file = fs.open(fileName.c_str(), FILE_READ); // 파일을 읽어서
   if (!file)
   {
-    Serial.println("Failed to open file in writing mode");
+    Serial.Fprintln("Failed to open file in writing mode");
     return;
   }
-  Serial.print("File Size: ");
+
+  currentMillis = millis();                                                                              // debugging set3
+  Serial.printf("picnum: %d / Interval 33333: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set3
+
+  Serial.Fprint("File Size: ");
   Serial.println(file.size());
   int fileSize = file.size(); // 크기를 구하고
   file.close();
@@ -499,7 +539,7 @@ void startTransmit()
   currentTransmitCurrentPosition = 0;
   // 총 전송 단위 수
   currentTransmitTotalPackages = ceil(fileSize / fileDatainMessage); // data cut-down; ceil(): 소숫점 올림함수
-  Serial.print("Total Packages: ");
+  Serial.Fprint("Total Packages: ");
   Serial.println(currentTransmitTotalPackages);
   // package 총량이 255를 넘어갈 수 있으므로 2 segment로 분리해야함.
   // int(32bit) 슬라이스 -> {01, uint8_t(상위 24비트), 하위 8비트(축소변환)}
@@ -530,22 +570,40 @@ void sendNextPackage()
     // reset
     currentTransmitCurrentPosition = 0;
     currentTransmitTotalPackages = 0;
-    Serial.println("Done submitting files"); // 파일 전송이 완료됨 표시
+    Serial.Fprintln("Done submitting files"); // 파일 전송이 완료됨 표시
 
-    Serial.printf("Curr freeHeap Size4: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
+    // currentMillis = millis();
+    // Serial.printf("Interval Check4: %lu\n", currentMillis - previousMillis);
 
-    // takeNextPhotoFlag = 1; // 타이머로 주기적 촬영 구현해서 필요없어짐
+    // takeNextPhotoFlag = true; // 타이머로 주기적 촬영 구현해서 필요없어짐
     return;
   } // end if
 
+  tempMillis = millis(); // debugging set0
+
   // 그렇지 않거나 첫 전송 때: 파일 읽음; first read the data.
   fs::FS &fs = SD_MMC;
+
+  currentMillis = millis();                                                                              // debugging set0
+  Serial.printf("picnum: %d / Interval 00000: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set0
+
+  tempMillis = millis(); // debugging set1
+
   File file = fs.open(fileName.c_str(), FILE_READ);
+
+  currentMillis = millis();                                                                              // debugging set1
+  Serial.printf("picnum: %d / Interval 11111: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set1
+
+  tempMillis = millis(); // debugging set2
+
   if (!file)
   {
-    Serial.println("Failed to open file in writing mode");
+    Serial.Fprintln("Failed to open file in writing mode");
     return;
   }
+
+  currentMillis = millis();                                                                              // debugging set2
+  Serial.printf("picnum: %d / Interval 22222: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set2
 
   // set array size.
   int fileDataSize = fileDatainMessage;
@@ -555,19 +613,17 @@ void sendNextPackage()
   // e.g) TP: 256개면 변수는 0~255; index 255이면 254째(마지막 직전) 전송 후 count++; 마지막 패키지 전송 직전
   if (currentTransmitCurrentPosition == currentTransmitTotalPackages - 1)
   {
-    Serial.println("*************************");
-    Serial.print("File Size: ");
+    Serial.Fprintln("*************************");
+    Serial.Fprint("File Size: ");
     Serial.println(file.size());
-    Serial.print("current Transmit packages: ");
+    Serial.Fprint("current Transmit packages: ");
     Serial.println(currentTransmitTotalPackages - 1);
-    Serial.print("Transmitted Data:");
+    Serial.Fprint("Transmitted Data:");
     Serial.println((currentTransmitTotalPackages - 1) * fileDatainMessage);                // 256개; 255 * 240, [지금까지 전송 Bytes 수 표시]
     fileDataSize = file.size() - ((currentTransmitTotalPackages - 1) * fileDatainMessage); // 전체 fileSize에서 지금까지 전송한 양 차감 -> 남은 데이터 < fileDatainMessage [자투리 데이터 계산]
-    Serial.print("Last package Data: ");
+    Serial.Fprint("Last package Data: ");
     Serial.println(fileDataSize);
   }
-
-  // Serial.println("fileDataSize=" + String(fileDataSize));  //613라인과 같이 주석설정/해제
 
   // define message array
   uint8_t messageArray[fileDataSize + 3];
@@ -576,12 +632,11 @@ void sendNextPackage()
   // seek() 함수로 파일 탐색 포인트 이동: 다음 보낼 데이터 시작점 지정
   file.seek(currentTransmitCurrentPosition * fileDatainMessage);
   ++currentTransmitCurrentPosition; // set to current (after seek!!!)
-  // Serial.println("PACKAGE - " + String(currentTransmitCurrentPosition));
 
   // slave가 알도록 현재위치 2Bytes 메시지에 저장
   messageArray[1] = currentTransmitCurrentPosition >> 8;  // 비트연산, 8비트 right shift, 2nd 8bits 남김
   messageArray[2] = (byte)currentTransmitCurrentPosition; // 1st 8bits; 총 하위 16비트
-  for (int i = 0; i < fileDataSize; i++)
+  for (int i = 0; i < fileDataSize; ++i)
   {
     if (file.available())
     {
@@ -591,7 +646,7 @@ void sendNextPackage()
 
     else
     {
-      Serial.println("END !!!");
+      Serial.Fprintln("END !!!");
       break;
     }
   } // end for
@@ -604,43 +659,56 @@ void sendNextPackage()
 /* ***************************************************************** */
 /* SEND DATA                                                         */
 /* ***************************************************************** */
-void sendData(uint8_t *dataArray, uint8_t dataArrayLength)
+void sendData(const uint8_t *dataArray, uint8_t dataArrayLength)
 {
+
   const uint8_t *peer_addr = slave.peer_addr;
-  // Serial.print("Sending: "); Serial.println(data);
-  // Serial.print("length: "); Serial.println(dataArrayLength);
+  // Serial.Fprint("Sending: "); Serial.println(data);
+  // Serial.Fprint("length: "); Serial.println(dataArrayLength);
 
   esp_err_t result = esp_now_send(peer_addr, dataArray, dataArrayLength);
 
-  // Serial.print("Send Status: ");
+  // tempMillis = millis(); // debugging
+
+  // currentMillis = millis();  // debugging
+  // Serial.printf("Package %d-%d transmission time: %lu ms\n", pictureNumber, packageArrayNum, currentMillis - tempMillis);  // debugging
+
+  // Serial.Fprint("Send Status: ");
   if (result == ESP_OK)
   {
-    // Serial.println("Success");
+    // Serial.Fprintln("Success");
+
+    // debugging: 로그 추적용
+    ++packageArrayNum;
+    if (dataArrayLength + 3 < (uint8_t)fileDatainMessage) // 마지막 자투리 데이터일 때
+    {
+      packageArrayNum = 0;
+    }
   }
   else if (result == ESP_ERR_ESPNOW_NOT_INIT)
   {
     // How did we get so far!!
-    Serial.println("ESPNOW not Init.");
+    Serial.Fprintln("ESPNOW not Init.");
   }
   else if (result == ESP_ERR_ESPNOW_ARG)
   {
-    Serial.println("Invalid Argument");
+    Serial.Fprintln("Invalid Argument");
   }
   else if (result == ESP_ERR_ESPNOW_INTERNAL)
   {
-    Serial.println("Internal Error");
+    Serial.Fprintln("Internal Error");
   }
   else if (result == ESP_ERR_ESPNOW_NO_MEM)
   {
-    Serial.println("ESP_ERR_ESPNOW_NO_MEM");
+    Serial.Fprintln("ESP_ERR_ESPNOW_NO_MEM");
   }
   else if (result == ESP_ERR_ESPNOW_NOT_FOUND)
   {
-    Serial.println("Peer not found.");
+    Serial.Fprintln("Peer not found.");
   }
   else
   {
-    Serial.println("Not sure what happened");
+    Serial.Fprintln("Not sure what happened");
   }
 }
 
@@ -653,10 +721,15 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
   // char macStr[18];
   // snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
   //          mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
-  // Serial.print("마지막 패킷 목적지: ");
+  // Serial.Fprint("마지막 패킷 목적지: ");
   // Serial.println(macStr);
-  // Serial.print("마지막 패킷 전송 상태: ");
+  // Serial.Fprint("마지막 패킷 전송 상태: ");
   // Serial.println(status == ESP_NOW_SEND_SUCCESS);
+
+  // currentMillis = millis();                                                                                                         // debugging
+  // Serial.printf("Package %d-%d transmission time AFTER: %lu ms\n", pictureNumber, packageArrayNum - 1, currentMillis - tempMillis); // debugging
+
+  tempMillis = millis(); // debugging 1
 
   if (currentTransmitTotalPackages) // 보낼 패키지가 남아있으면
   {
@@ -675,11 +748,11 @@ void InitESPNow()
   WiFi.disconnect();
   if (esp_now_init() == ESP_OK)
   {
-    Serial.println("ESPNow Init Success");
+    Serial.Fprintln("ESPNow Init Success");
   }
   else
   {
-    Serial.println("ESPNow Init Failed");
+    Serial.Fprintln("ESPNow Init Failed");
     // Retry InitESPNow, add a counte and then restart?
     // InitESPNow();
     // or Simply Restart
@@ -694,19 +767,19 @@ void ScanAndConnectToSlave()
 {
   int8_t scanResults = WiFi.scanNetworks(); // scanNetworks(): 한 번에 사용 가능한 wifi 네트워크를 검색하고 발견된 네트워크 수 반환
   // reset on each scan
-  bool slaveFound = 0;
+  bool slaveFound = false;
   memset(&slave, 0, sizeof(slave));
 
-  Serial.println("");
+  Serial.Fprintln("");
   if (scanResults == 0)
   {
-    Serial.println("No WiFi devices(Slaves) in AP Mode found");
+    Serial.Fprintln("No WiFi devices(Slaves) in AP Mode found");
   }
   else
   {
-    Serial.print("Found ");
+    Serial.Fprint("Found ");
     Serial.print(scanResults);
-    Serial.println(" devices ");
+    Serial.Fprintln(" devices ");
 
     // 찾은 장치만큼 반복
     for (int i = 0; i < scanResults; ++i)
@@ -719,12 +792,12 @@ void ScanAndConnectToSlave()
       if (PRINTSCANRESULTS)
       {
         Serial.print(i + 1);
-        Serial.print(": ");
+        Serial.Fprint(": ");
         Serial.print(SSID);
-        Serial.print(" (");
+        Serial.Fprint(" (");
         Serial.print(RSSI);
-        Serial.print(")");
-        Serial.println("");
+        Serial.Fprint(")");
+        Serial.Fprintln("");
       }
       delay(10);
 
@@ -733,19 +806,19 @@ void ScanAndConnectToSlave()
       if (SSID.indexOf("Slave") == 0) // indexOf(): 찾은 문자열의 시작 인덱스 반환
       {
         // SSID of interest
-        Serial.println("Found a Slave.");
+        Serial.Fprintln("Found a Slave.");
         Serial.print(i + 1);
-        Serial.print(": ");
+        Serial.Fprint(": ");
         Serial.print(SSID);
-        Serial.print(" [");
+        Serial.Fprint(" [");
         Serial.print(BSSIDstr);
-        Serial.print("]");
-        Serial.print(" (");
+        Serial.Fprint("]");
+        Serial.Fprint(" (");
         Serial.print(RSSI);
-        Serial.print(")");
-        Serial.println("");
+        Serial.Fprint(")");
+        Serial.Fprintln("");
         // Get BSSID => Mac Address of the Slave
-        int mac[6];
+        unsigned int mac[6];
         // scanf()와 동일, 입력 대상이 표준 입력이 아닌 매개변수로 전달되는 [문자열 버퍼] / 1st param: 입력한 문자열: string->const char* 변환
         if (6 == sscanf(BSSIDstr.c_str(), "%x:%x:%x:%x:%x:%x%c", &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]))
         {
@@ -758,7 +831,7 @@ void ScanAndConnectToSlave()
         slave.channel = CHANNEL; // pick a channel
         slave.encrypt = 0;       // no encryption
 
-        slaveFound = 1;
+        slaveFound = true;
         // we are planning to have only one slave in this example;
         // Hence, break after we find one, to be a bit efficient
         break;
@@ -767,7 +840,7 @@ void ScanAndConnectToSlave()
       else if (slaveMAC.length() == 17) // 찬솔 추가: index 대신 MAC주소 입력값으로 연결
       {
         // SSID of interest
-        // Serial.print("Input Slave MAC Addr: ");
+        // Serial.Fprint("Input Slave MAC Addr: ");
         // Serial.println(slaveMAC);
 
         int mac[6];
@@ -786,7 +859,7 @@ void ScanAndConnectToSlave()
           // Hence, break after we find one, to be a bit efficient
           break;
         }
-        Serial.println("Invalid MAC Addr.");
+        Serial.Fprintln("Invalid MAC Addr.");
       } // else if end
       */
 
@@ -795,7 +868,7 @@ void ScanAndConnectToSlave()
 
   if (slaveFound)
   {
-    Serial.println("Slave Found, processing...");
+    Serial.Fprintln("Slave Found, processing...");
     if (slave.channel == CHANNEL)
     { // check if slave channel is defined
       // `slave` is defined
@@ -804,18 +877,18 @@ void ScanAndConnectToSlave()
       isPaired = manageSlave();
       if (isPaired)
       {
-        Serial.println("Slave pair success!");
+        Serial.Fprintln("Slave pair success!");
       }
       else
       {
         // slave pair failed
-        Serial.println("Slave pair failed!");
+        Serial.Fprintln("Slave pair failed!");
       }
     }
   }
   else
   {
-    Serial.println("Slave Not Found, trying again.");
+    Serial.Fprintln("Slave Not Found, trying again.");
   }
   // clean up ram, Delete the last scan result from memory.
   WiFi.scanDelete();
@@ -834,7 +907,7 @@ bool manageSlave() // bool이네?
       deletePeer();
     }
 
-    Serial.print("Slave Status: ");
+    Serial.Fprint("Slave Status: ");
     const esp_now_peer_info_t *peer = &slave; // peer 포인터를 슬레이브 주소 가리키도록
     const uint8_t *peer_addr = slave.peer_addr;
     // check if the peer exists
@@ -842,7 +915,7 @@ bool manageSlave() // bool이네?
     if (exists) // peer 존재하면
     {
       // Slave already paired.
-      Serial.println("Already Paired");
+      Serial.Fprintln("Already Paired");
       return true;
     }
     else // peer 존재하지 않으면 paring 시도
@@ -852,38 +925,38 @@ bool manageSlave() // bool이네?
       if (addStatus == ESP_OK) // peer 추가 시 == paring 성공 시
       {
         // Pair success
-        Serial.println("Pair success");
+        Serial.Fprintln("Pair success");
         return true;
       }
       else if (addStatus == ESP_ERR_ESPNOW_NOT_INIT)
       {
         // How did we get so far!!: 어쩌다 여기까지 왔니 ㅋㅋ
-        Serial.println("ESPNOW Not Init");
+        Serial.Fprintln("ESPNOW Not Init");
         return false;
       }
       else if (addStatus == ESP_ERR_ESPNOW_ARG)
       {
-        Serial.println("Invalid Argument");
+        Serial.Fprintln("Invalid Argument");
         return false;
       }
       else if (addStatus == ESP_ERR_ESPNOW_FULL)
       {
-        Serial.println("Peer list FULL");
+        Serial.Fprintln("Peer list FULL");
         return false;
       }
       else if (addStatus == ESP_ERR_ESPNOW_NO_MEM)
       {
-        Serial.println("Out of memory");
+        Serial.Fprintln("Out of memory");
         return false;
       }
       else if (addStatus == ESP_ERR_ESPNOW_EXIST)
       {
-        Serial.println("Peer Exists");
+        Serial.Fprintln("Peer Exists");
         return true;
       }
       else
       {
-        Serial.println("Not sure what happened");
+        Serial.Fprintln("Not sure what happened");
         return false;
       }
     }
@@ -891,7 +964,7 @@ bool manageSlave() // bool이네?
   else // 채널비교 다르면
   {
     // No slave found to process
-    Serial.println("No Slave found to process");
+    Serial.Fprintln("No Slave found to process");
     return false;
   }
 }
@@ -901,38 +974,39 @@ bool manageSlave() // bool이네?
 /* ***************************************************************** */
 void deletePeer()
 {
-  const esp_now_peer_info_t *peer = &slave;
+  // const esp_now_peer_info_t *peer = &slave; //never used
   const uint8_t *peer_addr = slave.peer_addr;
   esp_err_t delStatus = esp_now_del_peer(peer_addr);
-  Serial.print("Slave Delete Status: ");
+  Serial.Fprint("Slave Delete Status: ");
   if (delStatus == ESP_OK)
   {
     // Delete success
-    Serial.println("Success");
+    Serial.Fprintln("Success");
   }
   else if (delStatus == ESP_ERR_ESPNOW_NOT_INIT)
   {
     // How did we get so far!!
-    Serial.println("ESPNOW Not Init");
+    Serial.Fprintln("ESPNOW Not Init");
   }
   else if (delStatus == ESP_ERR_ESPNOW_ARG)
   {
-    Serial.println("Invalid Argument");
+    Serial.Fprintln("Invalid Argument");
   }
   else if (delStatus == ESP_ERR_ESPNOW_NOT_FOUND)
   {
-    Serial.println("Peer not found.");
+    Serial.Fprintln("Peer not found.");
   }
   else
   {
-    Serial.println("Not sure what happened");
+    Serial.Fprintln("Not sure what happened");
   }
 }
 
 /* ***************************************************************** */
 /*                  HELPERS RELATED FUNCTIONS                        */
 /* ***************************************************************** */
-// Onboard LED Bilnk
+// Onboard LED Bilnk: Never used
+/*
 void blinkIt(int delayTime, int times)
 {
   for (int i = 0; i < times; i++)
@@ -943,15 +1017,16 @@ void blinkIt(int delayTime, int times)
     delay(delayTime);
   }
 }
+*/
 
 // Initialize SPIFFS
 void initSPIFFS()
 {
   if (!SPIFFS.begin(true))
   {
-    Serial.println("An error has occurred while mounting SPIFFS");
+    Serial.Fprintln("An error has occurred while mounting SPIFFS");
   }
-  Serial.println("SPIFFS mounted successfully");
+  Serial.Fprintln("SPIFFS mounted successfully");
 }
 
 // Read File from SPIFFS
@@ -962,7 +1037,7 @@ String readFile(fs::FS &fs, const char *path)
   File file = fs.open(path);
   if (!file || file.isDirectory())
   {
-    Serial.println("- failed to open file for reading");
+    Serial.Fprintln("- failed to open file for reading");
     return String();
   }
 
@@ -983,16 +1058,16 @@ void writeFile(fs::FS &fs, const char *path, const char *message)
   File file = fs.open(path, FILE_WRITE);
   if (!file)
   {
-    Serial.println("- failed to open file for writing");
+    Serial.Fprintln("- failed to open file for writing");
     return;
   }
   if (file.print(message))
   {
-    Serial.println("- file written");
+    Serial.Fprintln("- file written");
   }
   else
   {
-    Serial.println("- write failed");
+    Serial.Fprintln("- write failed");
   }
 }
 
@@ -1000,7 +1075,7 @@ bool initCamConfig()
 {
   if (camId == "" || slaveMAC == "" || capturePeriod == "")
   {
-    Serial.println("Undefined Cam ID or slaveMac or Capture Period.");
+    Serial.Fprintln("Undefined Cam ID or slaveMac or Capture Period.");
     return true;
   }
   return false;
@@ -1008,5 +1083,5 @@ bool initCamConfig()
 
 float getCurrFreeHeapRatio()
 {
-  return (float)ESP.getFreeHeap() / (float)ESP.getHeapSize();
+  return (float)ESP.getFreeHeap() / (float)ESP.getHeapSize() * 100;
 }
