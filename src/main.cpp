@@ -385,28 +385,28 @@ void takePhoto()
 {
   takeNextPhotoFlag = false;
 
-  // digitalWrite(4, HIGH);
-  // delay(50);
   camera_fb_t *fb = NULL; // 카메라 버퍼 구조체
 
   // Take Picture with Camera
   fb = esp_camera_fb_get(); // 포인터에서 프레임 버퍼를 얻음
-
-  // Serial.printf("Curr freeHeap Size Runtime: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
 
   if (!fb) // 버퍼가 비어있으면 카매라 캡쳐 실패
   {
     Serial.Fprintln("Camera capture failed");
     return;
   }
-  // digitalWrite(4, LOW);
 
-  // 찬솔-기능추가: 파일명 zero padding
-  std::string old_str = std::to_string(pictureNumber);
-  std::string new_str = std::string(n_zero - std::min(n_zero, old_str.length()), '0') + old_str;
+  /*  // 동일 이름으로 작성해보자
+    // 찬솔-기능추가: 파일명 zero padding
+    std::string old_str = std::to_string(pictureNumber);
+    std::string new_str = std::string(n_zero - std::min(n_zero, old_str.length()), '0') + old_str;
 
   // Path where new picture will be saved in SD Card
   std::string path = "/picture" + new_str + ".jpg";
+  */
+
+  // Path where new picture will be saved in SD Card
+  String path = "/" + String(1) + ".jpg";
 
   fs::FS &fs = SD_MMC;
   Serial.printf("Picture file name: %s\n", path.c_str());
@@ -452,6 +452,22 @@ void initSD()
     Serial.Fprintln("No SD Card attached");
     return;
   }
+  if (cardType == CARD_MMC)
+  {
+    Serial.println("cardType: MMC");
+  }
+  else if (cardType == CARD_SD)
+  {
+    Serial.println("cardType: SDSC");
+  }
+  else if (cardType == CARD_SDHC)
+  {
+    Serial.println("cardType: SDHC");
+  }
+  else
+  {
+    Serial.println("cardType: UNKNOWN");
+  }
 }
 
 /* ***************************************************************** */
@@ -487,9 +503,9 @@ void initCamera()
 
   if (psramFound())
   {
-    config.frame_size = FRAMESIZE_SVGA; // FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA //FRAMESIZE_QVGA
-    config.jpeg_quality = 10;
-    config.fb_count = 1;
+    config.frame_size = FRAMESIZE_VGA; // FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA //FRAMESIZE_QVGA
+    config.jpeg_quality = 8;
+    config.fb_count = 2;
   }
   else
   {
@@ -516,7 +532,9 @@ void initCamera()
 /* ***************************************************************** */
 void startTransmit()
 {
-  tempMillis = millis(); // debugging set3
+  // fs.open() 갈수록 지연됨
+
+  tempMillis = millis(); // debugging set0
 
   Serial.Fprintln("Starting transmit");
   fs::FS &fs = SD_MMC;
@@ -527,8 +545,8 @@ void startTransmit()
     return;
   }
 
-  currentMillis = millis();                                                                              // debugging set3
-  Serial.printf("picnum: %d / Interval 33333: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set3
+  currentMillis = millis();                                                                              // debugging set0
+  Serial.printf("picnum: %d / Interval 00000: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set0
 
   Serial.Fprint("File Size: ");
   Serial.println(file.size());
@@ -579,13 +597,8 @@ void sendNextPackage()
     return;
   } // end if
 
-  tempMillis = millis(); // debugging set0
-
   // 그렇지 않거나 첫 전송 때: 파일 읽음; first read the data.
   fs::FS &fs = SD_MMC;
-
-  currentMillis = millis();                                                                              // debugging set0
-  Serial.printf("picnum: %d / Interval 00000: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set0
 
   tempMillis = millis(); // debugging set1
 
@@ -594,16 +607,11 @@ void sendNextPackage()
   currentMillis = millis();                                                                              // debugging set1
   Serial.printf("picnum: %d / Interval 11111: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set1
 
-  tempMillis = millis(); // debugging set2
-
   if (!file)
   {
     Serial.Fprintln("Failed to open file in writing mode");
     return;
   }
-
-  currentMillis = millis();                                                                              // debugging set2
-  Serial.printf("picnum: %d / Interval 22222: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set2
 
   // set array size.
   int fileDataSize = fileDatainMessage;
@@ -668,22 +676,10 @@ void sendData(const uint8_t *dataArray, uint8_t dataArrayLength)
 
   esp_err_t result = esp_now_send(peer_addr, dataArray, dataArrayLength);
 
-  // tempMillis = millis(); // debugging
-
-  // currentMillis = millis();  // debugging
-  // Serial.printf("Package %d-%d transmission time: %lu ms\n", pictureNumber, packageArrayNum, currentMillis - tempMillis);  // debugging
-
   // Serial.Fprint("Send Status: ");
   if (result == ESP_OK)
   {
     // Serial.Fprintln("Success");
-
-    // debugging: 로그 추적용
-    ++packageArrayNum;
-    if (dataArrayLength + 3 < (uint8_t)fileDatainMessage) // 마지막 자투리 데이터일 때
-    {
-      packageArrayNum = 0;
-    }
   }
   else if (result == ESP_ERR_ESPNOW_NOT_INIT)
   {
@@ -725,11 +721,6 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
   // Serial.println(macStr);
   // Serial.Fprint("마지막 패킷 전송 상태: ");
   // Serial.println(status == ESP_NOW_SEND_SUCCESS);
-
-  // currentMillis = millis();                                                                                                         // debugging
-  // Serial.printf("Package %d-%d transmission time AFTER: %lu ms\n", pictureNumber, packageArrayNum - 1, currentMillis - tempMillis); // debugging
-
-  tempMillis = millis(); // debugging 1
 
   if (currentTransmitTotalPackages) // 보낼 패키지가 남아있으면
   {
