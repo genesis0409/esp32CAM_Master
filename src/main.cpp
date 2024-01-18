@@ -52,7 +52,15 @@ unsigned long tempMillis = 0;
 // #define INCLUDE_uxTaskGetStackHighWaterMark 1
 // UBaseType_t uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
 
+// =========================================================
+// ****************** Select camera model ******************
+// =========================================================
+
+// #define CAMERA_MODEL_AI_THINKER // Has PSRAM
+#define TTGO_T_Camera_plus // Has PSRAM
+
 // Pin definition for CAMERA_MODEL_AI_THINKER, esp32 cam 핀 배열
+#if defined(CAMERA_MODEL_AI_THINKER)
 #define PWDN_GPIO_NUM 32
 #define RESET_GPIO_NUM -1
 #define XCLK_GPIO_NUM 0
@@ -70,6 +78,30 @@ unsigned long tempMillis = 0;
 #define VSYNC_GPIO_NUM 25
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
+
+// Pin definition for TTGO T-Camera plus (cv-jh640-750v2 : 2MP cam)
+#elif defined(TTGO_T_Camera_plus)
+#define PWDN_GPIO_NUM -1
+#define RESET_GPIO_NUM -1
+#define XCLK_GPIO_NUM 4
+#define SIOD_GPIO_NUM 18
+#define SIOC_GPIO_NUM 23
+
+#define Y9_GPIO_NUM 36
+#define Y8_GPIO_NUM 37
+#define Y7_GPIO_NUM 38
+#define Y6_GPIO_NUM 39
+#define Y5_GPIO_NUM 35
+#define Y4_GPIO_NUM 26
+#define Y3_GPIO_NUM 13
+#define Y2_GPIO_NUM 34
+#define VSYNC_GPIO_NUM 5
+#define HREF_GPIO_NUM 27
+#define PCLK_GPIO_NUM 25
+
+#else
+#error "Camera model not selected"
+#endif
 
 #define fileDatainMessage 240.0 // ESPNOW 최대 250Bytes전송 고려 data cut-down
 #define UARTWAITHANDSHACK 1000
@@ -501,6 +533,7 @@ void initCamera()
   Serial.Fprint("psramFound() = ");
   Serial.println(String(psramFound()));
 
+#if defined(CAMERA_MODEL_AI_THINKER)
   if (psramFound())
   {
     config.frame_size = FRAMESIZE_VGA; // FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA //FRAMESIZE_QVGA
@@ -513,6 +546,20 @@ void initCamera()
     config.jpeg_quality = 16;
     config.fb_count = 1;
   }
+#elif defined(TTGO_T_Camera_plus)
+  if (psramFound())
+  {
+    config.frame_size = FRAMESIZE_SXGA; // FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA //FRAMESIZE_QVGA
+    config.jpeg_quality = 8;
+    config.fb_count = 2;
+  }
+  else
+  {
+    config.frame_size = FRAMESIZE_SVGA;
+    config.jpeg_quality = 16;
+    config.fb_count = 1;
+  }
+#endif
 
   // Init Camera
   esp_err_t err = esp_camera_init(&config);
@@ -600,12 +647,12 @@ void sendNextPackage()
   // 그렇지 않거나 첫 전송 때: 파일 읽음; first read the data.
   fs::FS &fs = SD_MMC;
 
-  tempMillis = millis(); // debugging set1
+  // tempMillis = millis(); // debugging set1
 
   File file = fs.open(fileName.c_str(), FILE_READ);
 
-  currentMillis = millis();                                                                              // debugging set1
-  Serial.printf("picnum: %d / Interval 11111: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set1
+  // currentMillis = millis();                                                                              // debugging set1
+  // Serial.printf("picnum: %d / Interval 11111: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set1
 
   if (!file)
   {
