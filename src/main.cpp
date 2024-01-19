@@ -84,8 +84,8 @@ unsigned long tempMillis = 0;
 #define PWDN_GPIO_NUM -1
 #define RESET_GPIO_NUM -1
 #define XCLK_GPIO_NUM 4
-#define SIOD_GPIO_NUM 18
-#define SIOC_GPIO_NUM 23
+#define SIOD_GPIO_NUM 18 // SDA
+#define SIOC_GPIO_NUM 23 // SCL
 
 #define Y9_GPIO_NUM 36
 #define Y8_GPIO_NUM 37
@@ -98,6 +98,22 @@ unsigned long tempMillis = 0;
 #define VSYNC_GPIO_NUM 5
 #define HREF_GPIO_NUM 27
 #define PCLK_GPIO_NUM 25
+
+// SD card
+#define MISO_PIN_NUM 22 // Master In, Slave Out
+#define MOSI_PIN_NUM 19 // Master Out, Slave In
+#define SCLK_PIN_NUM 21
+
+#define SDCARD_CS_PIN_NUM 0 // Chip Select
+
+// Display
+#define TFT_MISO_PIN_NUM 22
+#define TFT_MOSI_PIN_NUM 19
+#define TFT_SCLK_PIN_NUM 21
+
+#define TFT_CS_PIN_NUM 12
+#define TFT_DC_PIN_NUM 15
+#define TFT_BK_PIN_NUM 2
 
 #else
 #error "Camera model not selected"
@@ -472,11 +488,20 @@ void takePhoto()
 void initSD()
 {
   Serial.Fprintln("Starting SD Card");
+
+#if defined(TTGO_T_Camera_plus)
   if (!SD_MMC.begin("/sdcard", true))
   {
     Serial.Fprintln("SD Card Mount Failed");
     return;
   }
+#else
+  if (!SD_MMC.begin("/sdcard", true))
+  {
+    Serial.Fprintln("SD Card Mount Failed");
+    return;
+  }
+#endif
 
   uint8_t cardType = SD_MMC.cardType();
   if (cardType == CARD_NONE)
@@ -536,15 +561,9 @@ void initCamera()
 #if defined(CAMERA_MODEL_AI_THINKER)
   if (psramFound())
   {
-    config.frame_size = FRAMESIZE_VGA; // FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA //FRAMESIZE_QVGA
+    config.frame_size = FRAMESIZE_SVGA; // FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA //FRAMESIZE_QVGA
     config.jpeg_quality = 8;
     config.fb_count = 2;
-  }
-  else
-  {
-    config.frame_size = FRAMESIZE_SVGA;
-    config.jpeg_quality = 16;
-    config.fb_count = 1;
   }
 #elif defined(TTGO_T_Camera_plus)
   if (psramFound())
@@ -553,13 +572,13 @@ void initCamera()
     config.jpeg_quality = 8;
     config.fb_count = 2;
   }
+#endif
   else
   {
     config.frame_size = FRAMESIZE_SVGA;
-    config.jpeg_quality = 16;
+    config.jpeg_quality = 10;
     config.fb_count = 1;
   }
-#endif
 
   // Init Camera
   esp_err_t err = esp_camera_init(&config);
