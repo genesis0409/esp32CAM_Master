@@ -9,8 +9,8 @@
 // https://www.youtube.com/watch?v=0s4Bm9Ar42U
 */
 #include "Arduino.h"
-#include "FS.h"               // SD Card ESP32
-#include "SD_MMC.h"           // SD Card ESP32
+#include "FS.h" // SD Card ESP32
+// #include "SD_MMC.h"           // SD Card ESP32
 #include "soc/soc.h"          // Disable brownour problems
 #include "soc/rtc_cntl_reg.h" // Disable brownour problems
 #include "driver/rtc_io.h"
@@ -155,7 +155,7 @@ String fileName = "/moon.jpg";
 
 // 메소드 선언부
 void takePhoto();
-void initSD();
+// void initSD(); // Disabled -> using SPIFFS
 void initCamera();
 void startTransmit();
 void sendNextPackage();
@@ -281,7 +281,7 @@ void setup()
   {
     Serial.Fprintln("CAMERA MASTER STARTED"); // tarted : 시작되다; 자동사인듯?
     initCamera();                             // init camera
-    initSD();                                 // init sd
+    // initSD();                                 // init sd
 
     Serial.printf("Curr freeHeap Size7: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
 
@@ -444,8 +444,9 @@ void takePhoto()
     return;
   }
 
-  /*  // 동일 이름으로 작성해보자
-    // 찬솔-기능추가: 파일명 zero padding
+  /*
+    // 동일 이름으로 작성해보자 -> SD 카드에서 파일이름 14쯤부터 지연시간 누적
+    // 기능추가: 파일명 zero padding
     std::string old_str = std::to_string(pictureNumber);
     std::string new_str = std::string(n_zero - std::min(n_zero, old_str.length()), '0') + old_str;
 
@@ -453,15 +454,19 @@ void takePhoto()
   std::string path = "/picture" + new_str + ".jpg";
   */
 
-  // Path where new picture will be saved in SD Card
+  // Path where new picture will be saved in SD Card -> Flash Memory
   String path = "/" + String(1) + ".jpg";
 
-  fs::FS &fs = SD_MMC;
   Serial.printf("Picture file name: %s\n", path.c_str());
 
-  fs.remove(path.c_str()); // 이미 있으면 지우고
+  // SD card parts -> SPIFFS 플래시 기록으로 대체
+  // fs::FS &fs = SD_MMC;
+  // fs.remove(path.c_str()); // 이미 있으면 지우고
 
-  File file = fs.open(path.c_str(), FILE_WRITE);
+  SPIFFS.remove(path.c_str()); // 이미 있으면 지우고
+
+  // File file = fs.open(path.c_str(), FILE_WRITE);  // SD Card
+  File file = SPIFFS.open(path.c_str(), FILE_WRITE); // SPIFFS
   if (!file)
   {
     Serial.Fprintln("Failed to open file in writing mode");
@@ -483,8 +488,10 @@ void takePhoto()
 }
 
 /* ***************************************************************** */
-/* INIT SD card                                                      */
+/* INIT SD Card                                                      */
 /* ***************************************************************** */
+// Disabled SD Card
+/*
 void initSD()
 {
   Serial.Fprintln("Starting SD Card");
@@ -526,6 +533,7 @@ void initSD()
     Serial.println("cardType: UNKNOWN");
   }
 }
+*/
 
 /* ***************************************************************** */
 /* INIT CAMERA                                                       */
@@ -562,21 +570,21 @@ void initCamera()
   if (psramFound())
   {
     config.frame_size = FRAMESIZE_SVGA; // FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA //FRAMESIZE_QVGA
-    config.jpeg_quality = 8;
+    config.jpeg_quality = 16;
     config.fb_count = 2;
   }
 #elif defined(TTGO_T_Camera_plus)
   if (psramFound())
   {
-    config.frame_size = FRAMESIZE_SXGA; // FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA //FRAMESIZE_QVGA
-    config.jpeg_quality = 8;
+    config.frame_size = FRAMESIZE_SVGA; // FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA //FRAMESIZE_QVGA
+    config.jpeg_quality = 16;
     config.fb_count = 2;
   }
 #endif
   else
   {
     config.frame_size = FRAMESIZE_SVGA;
-    config.jpeg_quality = 10;
+    config.jpeg_quality = 16;
     config.fb_count = 1;
   }
 
@@ -603,8 +611,12 @@ void startTransmit()
   tempMillis = millis(); // debugging set0
 
   Serial.Fprintln("Starting transmit");
-  fs::FS &fs = SD_MMC;
-  File file = fs.open(fileName.c_str(), FILE_READ); // 파일을 읽어서
+
+  // SD card parts -> SPIFFS 플래시 기록으로 대체
+  // fs::FS &fs = SD_MMC;
+  // File file = fs.open(fileName.c_str(), FILE_READ); // 파일을 읽어서; SD Card
+
+  File file = SPIFFS.open(fileName.c_str(), FILE_READ); // 파일을 읽어서; SPIFFS
   if (!file)
   {
     Serial.Fprintln("Failed to open file in writing mode");
@@ -664,14 +676,16 @@ void sendNextPackage()
   } // end if
 
   // 그렇지 않거나 첫 전송 때: 파일 읽음; first read the data.
-  fs::FS &fs = SD_MMC;
+  // SD card parts -> SPIFFS 플래시 기록으로 대체
+  // fs::FS &fs = SD_MMC;
 
-  // tempMillis = millis(); // debugging set1
+  tempMillis = millis(); // debugging set1
 
-  File file = fs.open(fileName.c_str(), FILE_READ);
+  // File file = fs.open(fileName.c_str(), FILE_READ);     // SD Card
+  File file = SPIFFS.open(fileName.c_str(), FILE_READ); // SPIFFS
 
-  // currentMillis = millis();                                                                              // debugging set1
-  // Serial.printf("picnum: %d / Interval 11111: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set1
+  currentMillis = millis();                                                                              // debugging set1
+  Serial.printf("picnum: %d / Interval 11111: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set1
 
   if (!file)
   {
