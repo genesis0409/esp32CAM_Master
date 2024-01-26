@@ -21,7 +21,14 @@
 // #define RXPIN 3
 #include "esp_camera.h"
 
-#include "SPIFFS.h"
+// Select File System, with 'board.build.filesystem' in 'platformio.ini'
+#include "SPIFFS.h" // Fast
+// #include "LittleFS.h" // Slow
+
+#if defined(LittleFS)
+#define SPIFFS LITTLEFS
+#endif
+
 #include <ESPAsyncWebServer.h>
 #include <AsyncTCP.h>
 
