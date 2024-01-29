@@ -648,7 +648,7 @@ void startTransmit()
   // int(32bit) 슬라이스 -> {01, uint8_t(상위 24비트), 하위 8비트(축소변환)}
   // 결과적으로 {01, 하위 16~9비트, 하위 8비트}; (int 하위 16비트만 남음)
   // 대충 240*2^16=15.7MB정도까지 한계 -> 오버플로 가능성 있지만 카메라 한계상 가능성없을듯
-  uint8_t message[] = {0x01, currentTransmitTotalPackages >> 8, (byte)currentTransmitTotalPackages};
+  uint8_t message[] = {uint8_t(camId.toInt()), 0x01, currentTransmitTotalPackages >> 8, (byte)currentTransmitTotalPackages};
 
   // sendData() >> esp_now_send(); 3Bytes 메시지 전송 {slaveCheck, filesize 2nd Byte, fileSize 1st Byte}
   // 몇 패키지를 받을지 미리 고지한다고 보면 될듯
@@ -721,21 +721,24 @@ void sendNextPackage()
   }
 
   // define message array
-  uint8_t messageArray[fileDataSize + 3];
-  messageArray[0] = 0x02; // 나머지 2개 원소는? -> 아래 [1], [2] 설정
+  uint8_t messageArray[fileDataSize + 4];
+
+  messageArray[0] = uint8_t(camId.toInt());
+
+  messageArray[1] = 0x02; // 나머지 2개 원소는? -> 아래 [1], [2] 설정
 
   // seek() 함수로 파일 탐색 포인트 이동: 다음 보낼 데이터 시작점 지정
   file.seek(currentTransmitCurrentPosition * fileDatainMessage);
   ++currentTransmitCurrentPosition; // set to current (after seek!!!)
 
   // slave가 알도록 현재위치 2Bytes 메시지에 저장
-  messageArray[1] = currentTransmitCurrentPosition >> 8;  // 비트연산, 8비트 right shift, 2nd 8bits 남김
-  messageArray[2] = (byte)currentTransmitCurrentPosition; // 1st 8bits; 총 하위 16비트
+  messageArray[2] = currentTransmitCurrentPosition >> 8;  // 비트연산, 8비트 right shift, 2nd 8bits 남김
+  messageArray[3] = (byte)currentTransmitCurrentPosition; // 1st 8bits; 총 하위 16비트
   for (int i = 0; i < fileDataSize; ++i)
   {
     if (file.available())
     {
-      messageArray[3 + i] = file.read(); // [3]원소부터 파일내용 기록
+      messageArray[4 + i] = file.read(); // [3]원소부터 파일내용 기록
     }
     // end if available
 
