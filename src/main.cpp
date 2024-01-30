@@ -66,6 +66,10 @@ unsigned long tempMillis = 0;
 // #define CAMERA_MODEL_AI_THINKER // Has PSRAM
 #define TTGO_T_Camera_plus // Has PSRAM
 
+// =========================================================
+// ****************** Select camera model ******************
+// =========================================================
+
 // Pin definition for CAMERA_MODEL_AI_THINKER, esp32 cam 핀 배열
 #if defined(CAMERA_MODEL_AI_THINKER)
 #define PWDN_GPIO_NUM 32
@@ -155,7 +159,7 @@ bool takeNextPhotoFlag = false;
 int currentTransmitCurrentPosition = 0;
 int currentTransmitTotalPackages = 0;
 byte sendNextPackageFlag = 0;
-String fileName = "/moon.jpg";
+String fileName = "/1.jpg";
 
 // for connection type
 // bool useUartRX = 0;
@@ -177,7 +181,7 @@ void deletePeer();
 void initSPIFFS();                                                 // Initialize SPIFFS
 String readFile(fs::FS &fs, const char *path);                     // Read File from SPIFFS
 void writeFile(fs::FS &fs, const char *path, const char *message); // Write file to SPIFFS
-bool initCamConfig();                                              // For Reset Cam Configuration
+bool isCamConfigDefined();                                         // Is Cam Configuration Defiend?
 bool allowsLoop = false;                                           // loop() DO or NOT
 
 float getCurrFreeHeapRatio(); // 가용 힙 비율
@@ -219,12 +223,12 @@ void setup()
   Serial.printf("Curr freeHeap Size3: %.1f%%\n", getCurrFreeHeapRatio()); // DEBUGGING
 
   // AP모드 진입(cam config reset): softAP() 메소드
-  if (initCamConfig())
+  if (!isCamConfigDefined())
   {
     // Connect to Wi-Fi network with SSID and password
     Serial.Fprintln("Setting AP (Access Point)");
     // NULL sets an open Access Point
-    WiFi.softAP("ESP-WIFI-MANAGER", NULL);
+    WiFi.softAP("ESP-WIFI-MANAGER Master0", NULL);
 
     IPAddress IP = WiFi.softAPIP(); // Software enabled Access Point : 가상 라우터, 가상의 액세스 포인트
     Serial.Fprint("AP IP address: ");
@@ -650,7 +654,7 @@ void startTransmit()
   // 대충 240*2^16=15.7MB정도까지 한계 -> 오버플로 가능성 있지만 카메라 한계상 가능성없을듯
   uint8_t message[] = {uint8_t(camId.toInt()), 0x01, currentTransmitTotalPackages >> 8, (byte)currentTransmitTotalPackages};
 
-  // sendData() >> esp_now_send(); 3Bytes 메시지 전송 {slaveCheck, filesize 2nd Byte, fileSize 1st Byte}
+  // sendData() >> esp_now_send(); 4Bytes 메시지 전송 {camId, slaveCheck, filesize 2nd Byte, fileSize 1st Byte}
   // 몇 패키지를 받을지 미리 고지한다고 보면 될듯
   sendData(message, sizeof(message));
 
@@ -686,13 +690,13 @@ void sendNextPackage()
   // SD card parts -> SPIFFS 플래시 기록으로 대체
   // fs::FS &fs = SD_MMC;
 
-  tempMillis = millis(); // debugging set1
+  // tempMillis = millis(); // debugging set1
 
   // File file = fs.open(fileName.c_str(), FILE_READ);     // SD Card
   File file = SPIFFS.open(fileName.c_str(), FILE_READ); // SPIFFS
 
-  currentMillis = millis();                                                                              // debugging set1
-  Serial.printf("picnum: %d / Interval 11111: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set1
+  // currentMillis = millis();                                                                              // debugging set1
+  // Serial.printf("picnum: %d / Interval 11111: %lu ms\n", pictureNumber - 1, currentMillis - tempMillis); // debugging set1
 
   if (!file)
   {
@@ -721,9 +725,9 @@ void sendNextPackage()
   }
 
   // define message array
-  uint8_t messageArray[fileDataSize + 4];
+  uint8_t messageArray[fileDataSize + 4]; // 0:Camid; 1:msg; 2,3:data bytes
 
-  messageArray[0] = uint8_t(camId.toInt());
+  messageArray[0] = uint8_t(camId.toInt()); // 0~
 
   messageArray[1] = 0x02; // 나머지 2개 원소는? -> 아래 [1], [2] 설정
 
@@ -1152,14 +1156,14 @@ void writeFile(fs::FS &fs, const char *path, const char *message)
   }
 }
 
-bool initCamConfig()
+bool isCamConfigDefined()
 {
   if (camId == "" || slaveMAC == "" || capturePeriod == "")
   {
     Serial.Fprintln("Undefined Cam ID or slaveMac or Capture Period.");
-    return true;
+    return false;
   }
-  return false;
+  return true;
 }
 
 float getCurrFreeHeapRatio()
