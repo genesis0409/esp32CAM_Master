@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <meta charset="utf-8" />
     <title>ESP-NOW Manager Master</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="data:," />
@@ -15,7 +16,7 @@
         <div class="card">
           <form action="/" method="POST">
             <p>
-              <label for="camId">Cam ID (>= 0)</label>
+              <label for="camId">Cam ID</label>
               <input type="number" min="0" id="camId" name="camId" /><br />
               <label for="slaveMAC">MAC(Connect to)</label>
               <input
@@ -31,6 +32,13 @@
                 name="capturePeriod"
                 value="10000"
               /><label>milisec</label><br />
+              <label for="channel_slave">WiFi Channel(Slave)</label>
+              <input
+                type="number"
+                min="0"
+                id="channel_slave"
+                name="channel_slave"
+              /><br />
 
               <input type="submit" value="Submit" />
             </p>
